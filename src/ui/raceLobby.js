@@ -27,8 +27,12 @@ import { trackEvent } from '../core/analytics.js';
  * game: id del juego en la conexión ('geo', 'dino'). hostConfig: lo que elige la anfitriona (nivel, mundo…).
  * describeConfig(config): texto para mostrar la configuración. parseConfig(raw): valida la que llega.
  * look / parseLook: apariencia propia de cada juego. routeFor(config): ruta del juego en modo carrera.
+ * labels: textos de los botones si no es una carrera ({ create, start }).
  */
-export function mountRaceLobby(root, { game, title, backPath, hostConfig, describeConfig, parseConfig, look, parseLook, routeFor }) {
+const DEFAULT_LABELS = { create: 'Crear sala 🏁', start: '¡Empezar carrera! 🏁' };
+
+export function mountRaceLobby(root, { game, title, backPath, hostConfig, describeConfig, parseConfig, look, parseLook, routeFor, labels = {} }) {
+  const texts = { ...DEFAULT_LABELS, ...labels };
   let goingToRace = false;
   let unsubscribers = [];
   const me = parsePlayer(createHello(look), parseLook);
@@ -158,7 +162,7 @@ export function mountRaceLobby(root, { game, title, backPath, hostConfig, descri
       el('span', { className: 'race-card__emoji', text: '🏠', attrs: { 'aria-hidden': 'true' } }),
       el('h2', { className: 'setup__subtitle', text: 'Crear sala' }),
       el('p', { className: 'setup__note', text: describeConfig(hostConfig) }),
-      el('button', { className: 'btn btn--primary btn--lg', text: 'Crear sala 🏁', attrs: { type: 'button' }, on: { click: handleCreate } }),
+      el('button', { className: 'btn btn--primary btn--lg', text: texts.create, attrs: { type: 'button' }, on: { click: handleCreate } }),
       el('small', { className: 'setup__note', text: 'Para cambiar lo que se juega, vuelve atrás y elígelo.' }),
     ]);
 
@@ -193,7 +197,7 @@ export function mountRaceLobby(root, { game, title, backPath, hostConfig, descri
         }),
         el('button', {
           className: 'btn btn--primary btn--xl',
-          text: '¡Empezar carrera! 🏁',
+          text: texts.start,
           attrs: { type: 'button', disabled: count < 2 },
           on: { click: startRace },
         }),

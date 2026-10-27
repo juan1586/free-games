@@ -24,6 +24,7 @@
   --g-dino: linear-gradient(160deg, #7fd3ff 0%, #b9ecff 55%, #ffe7a8 100%);
   --g-tetris: linear-gradient(160deg, #7b5cff 0%, #b57bff 55%, #ff8ac4 100%);
   --g-geo: linear-gradient(160deg, #ffb3d9 0%, #e3c8ff 50%, #c9f7e8 100%);
+  --g-park: linear-gradient(170deg, #9fdcff 0%, #c9f0ff 55%, #d8f5c4 100%);
 
   /* Tipografía */
   --font: 'Fredoka', 'Baloo 2', ui-rounded, 'Segoe UI Rounded', system-ui, sans-serif;

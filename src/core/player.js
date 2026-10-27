@@ -33,6 +33,20 @@ const createDefaultGames = () => ({
     racesPlayed: 0,
     raceWins: 0,
   },
+  park: {
+    coins: 0,
+    welcomed: false,
+    outfit: { skin: 'skin-2', shirt: 'shirt-pink', pants: 'pants-jeans', hat: 'none', extra: 'none' },
+    owned: [],
+    ridesDone: {},
+    totalRides: 0,
+    fastPasses: 0,
+    snitches: 0,
+    goldenBeans: [],
+    missions: { day: '', list: [] },
+    missionsDone: 0,
+    friendVisits: 0,
+  },
   album: { stickers: [], fresh: [], lastChest: '', chestsOpened: 0 },
 });
 

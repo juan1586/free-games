@@ -400,6 +400,70 @@
   }
 }
 
+/* Parque Mágico */
+
+.game-card--park .game-card__art {
+  background: var(--g-park);
+}
+
+.art-park-ground {
+  position: absolute;
+  inset: auto 0 0;
+  height: 34px;
+  border-top: 4px solid var(--c-white);
+  background: repeating-linear-gradient(90deg, #6cc070 0 30px, #5fb35a 30px 60px);
+}
+
+.art-park-wheel {
+  position: absolute;
+  right: 14%;
+  bottom: 30px;
+  width: 120px;
+  height: 120px;
+  border: 6px solid var(--c-pink);
+  border-radius: 50%;
+  background:
+    linear-gradient(0deg, transparent 48%, #fff 48% 52%, transparent 52%),
+    linear-gradient(60deg, transparent 48%, #fff 48% 52%, transparent 52%),
+    linear-gradient(120deg, transparent 48%, #fff 48% 52%, transparent 52%),
+    radial-gradient(circle, var(--c-yellow) 0 12%, transparent 13%);
+  animation: park-wheel-spin 8s linear infinite;
+}
+
+.art-park-coaster {
+  position: absolute;
+  left: 14%;
+  bottom: 60px;
+  font-size: 3rem;
+  animation: park-coaster-ride 2.6s ease-in-out infinite;
+}
+
+.art-park-cup {
+  position: absolute;
+  left: 44%;
+  bottom: 30px;
+  font-size: 2.6rem;
+}
+
+@keyframes park-wheel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes park-coaster-ride {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0);
+  }
+  40% {
+    transform: translate(40px, -40px) rotate(-12deg);
+  }
+  60% {
+    transform: translate(70px, 10px) rotate(18deg);
+  }
+}
+
 /* ---------- Álbum y cofre del día ---------- */
 
 .treasure-bar {

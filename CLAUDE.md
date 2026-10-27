@@ -1,10 +1,10 @@
 # Juegos Gratis — contexto para Claude
 
-Sitio de juegos para las hijas del usuario (niñas pequeñas): **Dino Corre**, **Bloques Mágicos** (Tetris) y **Salto Geométrico** (estilo Geometry Dash). Se juega en tablet y PC. Diseño infantil-moderno, colores vivos, perdonador con los errores.
+Sitio de juegos para las hijas del usuario (niñas pequeñas): **Dino Corre**, **Bloques Mágicos** (Tetris), **Salto Geométrico** (estilo Geometry Dash) y **Parque Mágico** (3D estilo Roblox). Se juega en tablet y PC. Diseño infantil-moderno, colores vivos, perdonador con los errores.
 
 ## Stack y comandos
 
-- Vite 5 + JavaScript puro (sin framework). Única dependencia de runtime: `peerjs`, cargada con `import()` solo en el modo carrera. Node 18 en local (Vite 7 exigiría Node 20), Node 20 en CI.
+- Vite 5 + JavaScript puro (sin framework). Dependencias de runtime: `peerjs`, cargada con `import()` solo en el modo carrera, y `three`, que solo usa el Parque Mágico (su pantalla de juego se carga con `import()` desde el router, `mountLazy` en `main.js`; nada que importe `three` debe entrar en el bundle inicial). Node 18 en local (Vite 7 exigiría Node 20), Node 20 en CI.
 - Sin backend: todo se guarda en `localStorage` (clave `freegames:v1`), con varios perfiles de jugador por navegador.
 - Despliegue automático a GitHub Pages en cada push a `main` (`.github/workflows/deploy.yml`). `vite.config.js` usa `base: '/free-games/'`.
 
@@ -20,12 +20,14 @@ npm run check:levels   # bot que verifica que los niveles de Salto Geométrico s
 ```
 src/main.js        router por hash: #/, #/perfil, #/album, #/dino, #/dino/jugar?mundo=N[&carrera=1],
                    #/tetris, #/tetris/jugar?mundo=N, #/geo, #/geo/jugar?nivel=N[&practica=1|&carrera=1],
+                   #/parque, #/parque/jugar?mundo=N,
                    salas de espera: #/dino/carrera?mundo=N, #/geo/carrera?nivel=N
 src/core/          storage (localStorage con fallback en memoria), player (perfiles y datos por juego),
                    input (bindKeyboard, bindTouchGestures, bindHoldButton), audio (WebAudio generado,
                    createMusicLoop), gameLoop (rAF con delta y auto-pausa), canvas (setupCanvas con DPR),
                    race (salas de hasta 4 con PeerJS/WebRTC), raceMatch (lógica común de carrera),
-                   random (createRandom con semilla), analytics (GoatCounter: trackPage, trackEvent)
+                   random (createRandom con semilla), analytics (GoatCounter: trackPage, trackEvent),
+                   date (localDay: fecha local para lo diario)
 src/album/         stickers (pegatinas de todos los juegos, syncStickers, cofre del día), album (pantalla)
 src/ui/            dom (el, navigate), hud (createGameHeader, createBanner), modal (showModal), menu, profile,
                    raceLobby (sala de espera común), raceResults (podio y fin de carrera)
@@ -34,6 +36,10 @@ src/games/tetris/  TetrisGame, levels, setup
 src/games/geo/     physics (motor sin DOM), levels, shapes (apariencias y dibujo del jugador),
                    obstacles (dibujo de piezas), achievements (retos y estrellas), GeoGame, setup,
                    race (config/apariencia/posición de carrera), raceLobby
+src/games/park/    worlds (atracciones, granos dorados, mundos), outfits (ropa), missions, queue (filas, sin DOM),
+                   collision (sin three), kit (materiales/etiquetas three), avatar, props, world3d (el parque),
+                   crowd (visitantes y vigilantes), riders (visitantes sentados en las atracciones), joystick,
+                   rides/ (un minijuego por atracción), race + raceLobby + friends (parque con amigas), ParkGame, setup
 src/styles/        tokens.css (paleta, tipografía Fredoka, sombras), base, menu, games
 scripts/           check-geo-levels.mjs
 ```
@@ -66,6 +72,18 @@ scripts/           check-geo-levels.mjs
 - **Cualquier cambio en niveles, física o velocidades ⇒ ejecutar `npm run check:levels`.** Comprueba cada nivel en las 3 velocidades, con y sin turbo, con decisiones cada 100 ms, y que todas las monedas son alcanzables. Tarda unos 3 minutos; `npm run check:levels -- 2-3` comprueba solo un nivel.
 - Nivel secreto 9-1 (mundo con `secret: true`): no entra en `unlockedLevel`; se abre con `SECRET_COINS` monedas de los niveles normales (`canPlayLevel`, `MAIN_LEVELS` en `achievements.js` / `levels.js`).
 - Progreso: `unlockedLevel` (índice lineal 0..23). Los niveles nuevos se añaden al final; quien ya terminó el último que había lo encuentra abierto (`unlockAddedLevels` en `setup.js`). Solo desbloquea el modo normal (a cualquier velocidad). Estrellas = niveles completados + monedas + 2 por reto. Desbloquean apariencias (`shapes.js`).
+
+## Parque Mágico (detalles)
+
+- 3D con three.js a base de primitivas (cajas, cilindros, conos) y `MeshLambertMaterial`; sin modelos ni texturas. Geometrías y materiales salen de `createKit()` (`kit.js`) y se liberan juntos al salir (`kit.dispose()`); lo que se cree a mano se registra con `kit.track()`. Unidades en metros, Y hacia arriba, la plaza en (0, 0) y la entrada al sur (+Z).
+- Solo `ParkGame.js` y lo que importa usan `three`. `worlds.js`, `outfits.js`, `missions.js`, `queue.js` y `collision.js` no lo usan: los leen el menú, `setup.js` y las pegatinas.
+- Atracciones en `RIDES` (`worlds.js`) con `entrance`, `queueDir`, `fastPassPrice`, `secondsPerPerson`. Cada una tiene su minijuego en `rides/` (registro en `rides/index.js`) con `{ camera, scene?, intro, controls, done, update(delta, input), status(), prompt(), result(), dispose() }`; sin `scene` se juega dentro del parque (Krater, La Cumbre, Rueda, Chocones usan las piezas que devuelve `buildPark`). `dispose()` debe dejar el parque como estaba.
+- Filas: los visitantes (`crowd.js`) hacen fila, suben y vuelven. Sin la jugadora en la fila esta avanza más despacio (`BACKGROUND_QUEUE_PACE`) para que nunca se vacíe. Pase rápido = sube ya; a veces alguien se cuela y se le avisa al vigilante (`SNITCH_COINS`).
+- Monedas propias en `park.coins` (no se mezclan con las de Dino). Premios: monedas por atracción + `FIRST_RIDE_BONUS` la primera vez, monedas sueltas que reaparecen, `GOLDEN_BEANS` (coleccionables fijos), 3 misiones al día (`missions.js`, semilla con la fecha) y regalo de bienvenida. Al bajar de una atracción se muestra una foto del canvas (no se guarda).
+- Las atracciones del parque llevan visitantes sentados (`createRider` en `riders.js`): gritan en las bajadas (`moveTrain`, `cumbre.scream`), saludan desde la rueda o se quejan en los chocones. El vigilante camina hasta el colado, lo regaña y lo manda al final de la fila (`updateGuard` en `crowd.js`).
+- Saludos (`SAYINGS`/`EMOTES` en `park/race.js`, teclas 1-5): burbuja sobre la jugadora, los visitantes cercanos contestan (`crowd.reactTo`) y las amigas los ven. Solo se envían claves fijas, nunca texto libre.
+- **Parque con amigas** (`#/parque/amigos`, luego `#/parque/jugar?amigos=1`): usa la sala de las carreras (`mountRaceLobby` con `labels`, juego `park`). `friends.js` envía `pos` ~10 veces/s (`x y z h s a m r`) y `say` {kind, ride}; cada tablet simula sus propios visitantes y filas, y a las amigas se las dibuja donde dicen estar (ocultas mientras van en una atracción, con su estado en el panel 👭). Si alguien se va o se cierra la sala, se sigue jugando sola. Premio: `park.friendVisits` y la pegatina «Parque con amigas».
+- Nuevos mundos (Panaca, playa…): están anunciados en `UPCOMING_WORLDS`; habría que generalizar `buildPark` por mundo.
 
 ## Modo carrera (Dino y Salto Geométrico, de 2 a 4 jugadores, cada uno en su dispositivo)
 

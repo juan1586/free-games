@@ -1376,3 +1376,775 @@
     animation: none;
   }
 }
+
+/* ---------- Parque Mágico ---------- */
+
+.lazy-loading {
+  display: grid;
+  place-items: center;
+  min-height: 60dvh;
+}
+
+.lazy-loading__text {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  animation: hint-pulse 1.6s ease-in-out infinite;
+}
+
+.park-page {
+  width: 100%;
+  max-width: none;
+}
+
+.stage--park {
+  overflow: hidden;
+  width: min(1280px, 100%);
+  aspect-ratio: 16 / 9;
+  max-height: calc(100dvh - 130px);
+  border: 4px solid var(--c-white);
+  border-radius: var(--radius-lg);
+  background: #9fdcff;
+  box-shadow: var(--shadow-lg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.stage__canvas--park {
+  width: 100%;
+  height: 100%;
+}
+
+.stage--park .banner {
+  top: 24%;
+  max-width: 92%;
+  font-size: var(--fs-lg);
+  text-align: center;
+  white-space: normal;
+}
+
+.park-hint {
+  top: 30%;
+  animation: none;
+}
+
+.park-error {
+  display: grid;
+  place-items: center;
+  gap: 16px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  font-size: var(--fs-lg);
+}
+
+/* Misiones (arriba a la izquierda) */
+.park-missions {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: grid;
+  gap: 2px;
+  max-width: min(320px, 46%);
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: var(--shadow-sm);
+  font-size: 0.82rem;
+  list-style: none;
+  pointer-events: none;
+}
+
+.park-missions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.park-missions li.is-done {
+  color: var(--c-ink-soft);
+  text-decoration: line-through;
+}
+
+.park-missions__title {
+  font-weight: 700;
+}
+
+/* Botón para hacer fila */
+.park-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  padding: 12px 22px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--g-primary);
+  color: var(--c-white);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  box-shadow: var(--shadow-md);
+  transform: translateX(-50%);
+  animation: park-bob 1.2s ease-in-out infinite;
+}
+
+@keyframes park-bob {
+  50% {
+    transform: translate(-50%, -4px);
+  }
+}
+
+/* Tarjeta de la fila */
+.park-queue {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  display: none;
+  gap: 10px;
+  justify-items: center;
+  width: min(560px, 94%);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-md);
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.park-queue__text {
+  font-size: var(--fs-lg);
+}
+
+.park-queue__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.park-queue__actions .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.park-cutter {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  display: none;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: #ff5f5f;
+  color: var(--c-white);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  box-shadow: 0 6px 0 #c23b3b;
+  transform: translateX(-50%);
+  animation: park-shake 0.5s ease-in-out infinite;
+}
+
+.park-cutter.is-visible {
+  display: block;
+}
+
+@keyframes park-shake {
+  25% {
+    transform: translateX(calc(-50% - 4px)) rotate(-2deg);
+  }
+  75% {
+    transform: translateX(calc(-50% + 4px)) rotate(2deg);
+  }
+}
+
+/* Atracción en marcha */
+.park-ride-status {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  display: none;
+  padding: 6px 16px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.park-ride-prompt {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  display: none;
+  color: var(--c-white);
+  font-size: clamp(1.8rem, 5vw, 3.2rem);
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 3px 0 rgba(43, 33, 64, 0.5), 0 0 18px rgba(43, 33, 64, 0.35);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.park-ride-prompt.is-pop {
+  animation: park-pop 0.3s var(--ease-bounce);
+}
+
+@keyframes park-pop {
+  from {
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+}
+
+.park-reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: none;
+  width: 70px;
+  height: 70px;
+  border: 4px dashed rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.park-action {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: none;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--g-primary);
+  color: var(--c-white);
+  box-shadow: 0 6px 0 #d23d7e;
+  touch-action: none;
+}
+
+.park-action.is-pressed {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #d23d7e;
+}
+
+.park-action__icon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.park-action__label {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* Controles táctiles: solo en pantallas táctiles */
+.park-touch {
+  display: none;
+}
+
+.park-joystick {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  display: grid;
+  place-items: center;
+  width: 130px;
+  height: 130px;
+  border: 4px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  background: rgba(43, 33, 64, 0.18);
+  touch-action: none;
+}
+
+.park-joystick__knob {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--c-white);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+.park-touch .touch-btn--jump {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  border-radius: 50%;
+  flex: none;
+}
+
+.park-touch__steer {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  display: none;
+  gap: 12px;
+}
+
+.park-touch .touch-btn--steer {
+  width: 84px;
+  height: 84px;
+  padding: 0;
+  font-size: 2rem;
+}
+
+.park-touch .touch-btn__label {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .park-touch {
+    display: block;
+  }
+
+  .park-hint span:nth-child(2) {
+    display: none;
+  }
+}
+
+/* Lo que se ve en cada momento */
+.stage--park[data-mode='walk'] .park-joystick,
+.stage--park[data-mode='walk'] .park-touch .touch-btn--jump {
+  display: grid;
+}
+
+.stage--park:not([data-mode='walk']) .park-joystick,
+.stage--park:not([data-mode='walk']) .park-touch .touch-btn--jump,
+.stage--park:not([data-mode='walk']) .park-prompt {
+  display: none;
+}
+
+.stage--park[data-mode='queue'] .park-queue {
+  display: grid;
+}
+
+.stage--park[data-mode='ride'] .park-ride-status,
+.stage--park[data-mode='ride'] .park-ride-prompt {
+  display: block;
+}
+
+.stage--park[data-mode='ride'] .park-action {
+  display: grid;
+}
+
+.stage--park[data-mode='ride'].has-steer .park-touch__steer {
+  display: flex;
+}
+
+.stage--park[data-mode='ride'].has-reticle .park-reticle {
+  display: block;
+}
+
+.stage--park[data-mode='ride'] .park-missions,
+.stage--park[data-mode='result'] .park-missions {
+  display: none;
+}
+
+/* Resultado con la foto */
+.park-result:empty {
+  display: none;
+}
+
+.park-result {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: rgba(43, 33, 64, 0.35);
+}
+
+.park-result__card {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  max-height: 100%;
+  overflow: auto;
+  padding: 18px 22px;
+  border-radius: var(--radius-lg);
+  background: var(--c-white);
+  box-shadow: var(--shadow-lg);
+  animation: park-pop-card 0.4s var(--ease-bounce);
+}
+
+@keyframes park-pop-card {
+  from {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+}
+
+.park-result__title {
+  font-size: var(--fs-xl);
+}
+
+.park-photo {
+  margin: 0;
+  padding: 10px 10px 6px;
+  background: #fffdf7;
+  box-shadow: var(--shadow-md);
+  transform: rotate(-2deg);
+}
+
+.park-photo img,
+.park-photo__empty {
+  display: block;
+  width: min(300px, 60vw);
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+}
+
+.park-photo__empty {
+  display: grid;
+  place-items: center;
+  background: var(--g-park);
+  font-size: 3rem;
+}
+
+.park-photo figcaption {
+  padding-top: 6px;
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (max-height: 520px) {
+  .park-photo img,
+  .park-photo__empty {
+    width: min(200px, 40vw);
+  }
+
+  .park-missions {
+    display: none;
+  }
+}
+
+/* ---------- Pantalla previa del parque ---------- */
+
+.park-wardrobe__layout {
+  display: grid;
+  grid-template-columns: minmax(150px, 200px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 640px) {
+  .park-wardrobe__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.park-wardrobe__preview {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 16px 8px;
+  border-radius: var(--radius-md);
+  background: var(--g-park);
+}
+
+.park-avatar {
+  position: relative;
+  width: 120px;
+  height: 200px;
+}
+
+.park-avatar > span {
+  position: absolute;
+  border-radius: 6px;
+}
+
+.park-avatar__head {
+  left: 34px;
+  top: 22px;
+  width: 52px;
+  height: 52px;
+  background: var(--skin);
+}
+
+.park-avatar__head::before,
+.park-avatar__head::after {
+  content: '';
+  position: absolute;
+  top: 18px;
+  width: 7px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--c-ink);
+}
+
+.park-avatar__head::before {
+  left: 13px;
+}
+
+.park-avatar__head::after {
+  right: 13px;
+}
+
+.park-avatar__body {
+  left: 22px;
+  top: 76px;
+  width: 76px;
+  height: 64px;
+  overflow: hidden;
+  background: var(--shirt);
+}
+
+.park-avatar__stripe {
+  position: absolute;
+  inset: 18px 0 auto;
+  height: 12px;
+  background: var(--stripe);
+}
+
+.park-avatar__arm {
+  top: 76px;
+  width: 22px;
+  height: 60px;
+  background: linear-gradient(var(--shirt) 78%, var(--skin) 78%);
+}
+
+.park-avatar__arm--left {
+  left: 0;
+}
+
+.park-avatar__arm--right {
+  right: 0;
+}
+
+.park-avatar__leg {
+  top: 140px;
+  width: 36px;
+  height: 58px;
+  background: linear-gradient(var(--pants) 80%, var(--c-ink) 80%);
+}
+
+.park-avatar__leg--left {
+  left: 22px;
+}
+
+.park-avatar__leg--right {
+  right: 22px;
+}
+
+.park-avatar__hat {
+  left: 0;
+  right: 0;
+  top: -12px;
+  font-size: 2.6rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.park-avatar__extra {
+  right: -18px;
+  top: 90px;
+  font-size: 2rem;
+}
+
+.park-skins {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.park-skin {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--c-white);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+}
+
+.park-skin.is-selected {
+  outline: 3px solid var(--c-purple);
+}
+
+.park-swatch {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.12);
+  font-size: 1.5rem;
+}
+
+.park-mission-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.park-mission-list li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--c-purple-soft);
+}
+
+.park-mission-list li.is-done {
+  background: #dcfbe9;
+}
+
+.park-mission-list__icon {
+  font-size: 1.5rem;
+}
+
+.park-ride-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.park-ride-card {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 14px 10px;
+  border-radius: var(--radius-md);
+  background: var(--c-white);
+  box-shadow: var(--shadow-sm);
+  text-align: center;
+}
+
+.park-ride-card.is-done {
+  background: #f3fff9;
+}
+
+.park-ride-card__emoji {
+  font-size: 2.4rem;
+}
+
+.park-ride-card small {
+  color: var(--c-ink-soft);
+}
+
+.park-ride-card__count {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.park-beans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.park-bean {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--c-purple-soft);
+  font-size: 1.4rem;
+}
+
+.park-bean.is-found {
+  background: #fff3c4;
+}
+
+.park-world.is-locked {
+  opacity: 0.55;
+}
+
+/* Amigas en el parque (arriba a la derecha) */
+.park-friends {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  gap: 4px;
+  min-width: 170px;
+  max-width: min(260px, 40%);
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(233, 227, 255, 0.92);
+  box-shadow: var(--shadow-sm);
+  font-size: 0.82rem;
+  list-style: none;
+  pointer-events: none;
+}
+
+.park-friends[hidden] {
+  display: none;
+}
+
+.park-friends li {
+  display: grid;
+}
+
+.park-friends small {
+  color: var(--c-ink-soft);
+}
+
+.park-friends__title {
+  font-weight: 700;
+}
+
+/* Saludos y gestos (a la derecha, a media altura) */
+.park-emotes {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  transform: translateY(-50%);
+}
+
+.park-emote {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-sm);
+  font-size: 1.5rem;
+  transition: transform 0.15s var(--ease-bounce);
+}
+
+.park-emote:hover,
+.park-emote:active {
+  transform: scale(1.15);
+}
+
+.stage--park[data-mode='walk'] .park-emotes,
+.stage--park[data-mode='queue'] .park-emotes {
+  display: flex;
+}
+
+.stage--park[data-mode='ride'] .park-friends {
+  top: 52px;
+}
+
+@media (max-height: 560px) {
+  .park-emote {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+  }
+
+  .park-emotes {
+    gap: 4px;
+  }
+}

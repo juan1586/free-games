@@ -1,0 +1,1152 @@
+/**
+ * Parque Mágico: caminar en 3D por el Parque del Café, hacer fila (o pagar el pase rápido),
+ * montar en las atracciones (cada una es un minijuego de rides/) y ganar monedas, granos dorados
+ * y misiones del día. Este módulo (con three.js) se carga solo al entrar en el parque.
+ */
+import * as THREE from 'three';
+import { createGameLoop } from '../../core/gameLoop.js';
+import { bindHoldButton, bindKeyboard } from '../../core/input.js';
+import { createMusicLoop, sounds } from '../../core/audio.js';
+import { trackEvent } from '../../core/analytics.js';
+import { getActivePlayer, getGameData, sanitizeName, updateGameData } from '../../core/player.js';
+import { createRandom } from '../../core/random.js';
+import { el, navigate } from '../../ui/dom.js';
+import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
+import { closeModal, showModal } from '../../ui/modal.js';
+import { syncStickers } from '../../album/stickers.js';
+import { at, createKit } from './kit.js';
+import { createAvatar } from './avatar.js';
+import { currentOutfit } from './outfits.js';
+import { PARK_RADIUS, SPAWN, buildPark } from './world3d.js';
+import { PERSON_RADIUS, createCrowd } from './crowd.js';
+import { groundHeight, isBlocked, resolveCollisions } from './collision.js';
+import { MAX_QUEUE, slotPosition, waitSeconds } from './queue.js';
+import { ALL_MISSIONS_BONUS, MISSION_COINS, describeMissions, recordMission, todaysMissions } from './missions.js';
+import { FIRST_RIDE_BONUS, GOLDEN_BEANS, RIDES, SNITCH_COINS, WELCOME_COINS, getRide } from './worlds.js';
+import { RIDE_FACTORIES } from './rides/index.js';
+import { createJoystick } from './joystick.js';
+import { createFriends } from './friends.js';
+import { EMOTES, SAYINGS } from './race.js';
+
+const WALK_SPEED = 6;
+const RUN_FACTOR = 1.5;
+const JUMP_SPEED = 8.2;
+const GRAVITY = 22;
+/** Margen para saltar justo después de salir de un borde. */
+const COYOTE_SECONDS = 0.12;
+const PLAYER_RADIUS = 0.45;
+const CAMERA_DISTANCE = 9;
+const CAMERA_FOLLOW_RATE = 1.6;
+const DRAG_HOLD_SECONDS = 2;
+const COIN_COUNT = 30;
+const COIN_RESPAWN_SECONDS = 25;
+const PICK_RADIUS = 1.3;
+const BEAN_COINS = 10;
+const QUEUE_PROMPT_DISTANCE = 2.6;
+const QUEUE_WALK_SPEED = 3.2;
+/** Si se mantiene la dirección este tiempo estando en la fila, se sale de ella. */
+const LEAVE_QUEUE_SECONDS = 0.7;
+const CUTTER_ALERT_SECONDS = 7;
+const RESULT_ARM_MS = 700;
+const HINT_SECONDS = 9;
+const TOAST_MS = 2200;
+const BUBBLE_SECONDS = 2.2;
+const DANCE_SECONDS = 2;
+/** Tiempo mínimo entre dos saludos (para no llenar la pantalla de burbujas). */
+const EMOTE_COOLDOWN = 0.8;
+const FRIENDS_PANEL_EVERY = 0.3;
+/** Semilla fija: el parque se ve siempre igual (mismas palmas, mismo cafetal). */
+const PARK_LAYOUT_SEED = 2024;
+
+const MUSIC = {
+  bpm: 126,
+  melody:
+    'C5 E5 G5 E5 F5 A5 G5 - E5 G5 C6 G5 A5 G5 E5 - D5 F5 A5 F5 G5 E5 C5 - D5 E5 F5 D5 C5 - - -',
+  bass: 'C3 C3 F3 F3 C3 C3 G3 G3 C3 C3 F3 F3 G3 G3 C3 C3',
+};
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+function distanceToSegment(point, a, b) {
+  const abX = b.x - a.x;
+  const abZ = b.z - a.z;
+  const t = clamp(((point.x - a.x) * abX + (point.z - a.z) * abZ) / (abX * abX + abZ * abZ), 0, 1);
+  return Math.hypot(point.x - (a.x + abX * t), point.z - (a.z + abZ * t));
+}
+
+function angleDiff(target, current) {
+  let diff = target - current;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return diff;
+}
+
+export class ParkGame {
+  constructor(root, { friends = false } = {}) {
+    this.kit = createKit();
+    this.withFriends = friends;
+    this.buildDom(root);
+    try {
+      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
+    } catch {
+      this.showNoWebGl();
+      return;
+    }
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.aspect = 16 / 9;
+
+    this.scene = new THREE.Scene();
+    this.park = buildPark(this.kit, this.scene, createRandom(PARK_LAYOUT_SEED));
+    this.crowd = createCrowd({ kit: this.kit, scene: this.scene, random: Math.random });
+    this.friends = friends ? createFriends({ kit: this.kit, scene: this.scene, onEvent: (event) => this.handleFriendEvent(event) }) : null;
+    this.camera = new THREE.PerspectiveCamera(60, this.aspect, 0.1, 500);
+
+    const data = getGameData('park');
+    this.look = currentOutfit(data);
+    this.avatar = createAvatar(this.kit, this.look);
+    const name = sanitizeName(getActivePlayer()?.name) || 'Yo';
+    const nameTag = this.kit.label(name, { background: '#ff5fa2', color: '#ffffff', height: 0.45 });
+    nameTag.sprite.position.y = 2.95;
+    this.avatar.root.add(nameTag.sprite);
+    this.bubble = this.kit.label(' ', { bubble: true, height: 0.6, background: '#fff6c9' });
+    this.bubble.sprite.position.y = 3.6;
+    this.bubble.sprite.visible = false;
+    this.bubbleTimer = 0;
+    this.danceTimer = 0;
+    this.emoteCooldown = 0;
+    this.friendsPanelTimer = 0;
+    this.avatar.root.add(this.bubble.sprite);
+    this.scene.add(this.avatar.root, this.avatar.shadow);
+
+    this.player = { x: SPAWN.x, y: 0, z: SPAWN.z, vy: 0, heading: Math.PI, onGround: true, airTime: 0, speed: 0 };
+    this.cameraYaw = 0;
+    this.cameraPitch = 0.42;
+    this.dragHold = 0;
+    this.camera.position.set(SPAWN.x, 5, SPAWN.z + CAMERA_DISTANCE);
+
+    this.keys = { forward: false, back: false, left: false, right: false, run: false };
+    this.touchSteer = { left: false, right: false };
+    this.rideInput = { left: false, right: false, action: false, actionPressed: false, lookDelta: 0 };
+    this.status = 'walk';
+    this.queueRide = null;
+    this.rideRun = null;
+    this.toasts = [];
+    this.timers = [];
+    this.hintTimer = HINT_SECONDS;
+
+    this.buildCoins();
+    this.buildBeans();
+    this.music = createMusicLoop(MUSIC);
+
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(this.stage);
+    this.resize();
+
+    this.loop = createGameLoop({
+      update: (delta) => this.update(delta),
+      render: () => this.render(),
+      onAutoPause: () => this.pause(),
+    });
+    this.unbinders = this.bindControls();
+    this.setMode('walk');
+    this.refreshHud();
+    this.refreshMissions();
+    this.welcome();
+    this.startFriends();
+    this.loop.start();
+    this.music.start();
+  }
+
+  // ---------- Pantalla ----------
+
+  buildDom(root) {
+    const data = getGameData('park');
+    this.header = createGameHeader({
+      title: this.withFriends ? '👭 Parque del Café' : '☕ Parque del Café',
+      backPath: '/parque',
+      onPause: () => this.pause(),
+      items: [
+        { key: 'coins', label: 'Monedas', icon: '🪙', value: data.coins },
+        { key: 'beans', label: 'Granos dorados', icon: '🌟', value: `${data.goldenBeans.length}/${GOLDEN_BEANS.length}` },
+        { key: 'rides', label: 'Viajes', icon: '🎢', value: data.totalRides },
+      ],
+    });
+
+    this.canvas = el('canvas', { className: 'stage__canvas stage__canvas--park', attrs: { 'aria-label': 'Parque en 3D' } });
+    this.hint = el('div', { className: 'stage__hint park-hint' }, [
+      el('strong', { text: '¡Bienvenida al parque! 🎡' }),
+      el('span', { text: 'Camina con WASD / flechas o el joystick · Espacio: saltar · Shift: correr · Arrastra para mirar alrededor' }),
+      el('span', { text: 'Acércate a una fila y pulsa E (o el botón) para hacer fila.' }),
+    ]);
+
+    this.promptButton = el('button', { className: 'park-prompt', attrs: { type: 'button' }, on: { click: (event) => this.handleButton(event, () => this.interact()) } });
+    this.missionList = el('ul', { className: 'park-missions', attrs: { 'aria-label': 'Misiones de hoy' } });
+    this.friendsList = el('ul', { className: 'park-friends', attrs: { 'aria-label': 'Amigas en el parque', hidden: !this.withFriends } });
+    // Saludos y gestos (los ven las amigas y los visitantes cercanos contestan).
+    this.emoteButtons = EMOTES.map((kind, index) =>
+      el('button', {
+        className: 'park-emote',
+        text: SAYINGS[kind].icon,
+        attrs: { type: 'button', title: `${SAYINGS[kind].label} (${index + 1})`, 'aria-label': SAYINGS[kind].label },
+        on: { click: (event) => this.handleButton(event, () => this.emote(kind)) },
+      }),
+    );
+    this.emoteBar = el('div', { className: 'park-emotes' }, this.emoteButtons);
+
+    // Tarjeta de la fila.
+    this.queueText = el('strong', { className: 'park-queue__text' });
+    this.fastPassButton = el('button', {
+      className: 'btn btn--primary park-queue__fast',
+      attrs: { type: 'button' },
+      on: { click: (event) => this.handleButton(event, () => this.useFastPass()) },
+    });
+    this.leaveButton = el('button', {
+      className: 'btn btn--secondary park-queue__leave',
+      text: '🚶 Salir de la fila',
+      attrs: { type: 'button' },
+      on: { click: (event) => this.handleButton(event, () => this.leaveQueue()) },
+    });
+    this.queueCard = el('div', { className: 'park-queue' }, [this.queueText, el('div', { className: 'park-queue__actions' }, [this.fastPassButton, this.leaveButton])]);
+    this.cutterButton = el('button', {
+      className: 'park-cutter',
+      text: '🚨 ¡Alguien se coló! Avisar al vigilante',
+      attrs: { type: 'button' },
+      on: { click: (event) => this.handleButton(event, () => this.snitch()) },
+    });
+
+    // Atracción en marcha.
+    this.rideStatus = el('div', { className: 'park-ride-status' });
+    this.ridePrompt = el('div', { className: 'park-ride-prompt', attrs: { 'aria-live': 'polite' } });
+    this.reticle = el('div', { className: 'park-reticle', attrs: { 'aria-hidden': 'true' } });
+    this.actionButton = el('button', { className: 'park-action', attrs: { type: 'button' } }, [
+      el('span', { className: 'park-action__icon' }),
+      el('span', { className: 'park-action__label' }),
+    ]);
+
+    // Controles táctiles.
+    this.joystick = createJoystick();
+    this.jumpButton = createTouchButton({ icon: '⬆️', label: 'Saltar', variant: 'jump' });
+    this.steerLeft = createTouchButton({ icon: '◀', label: 'Izquierda', variant: 'steer' });
+    this.steerRight = createTouchButton({ icon: '▶', label: 'Derecha', variant: 'steer' });
+    const touch = el('div', { className: 'park-touch' }, [
+      this.joystick.element,
+      el('div', { className: 'park-touch__steer' }, [this.steerLeft, this.steerRight]),
+      this.jumpButton,
+    ]);
+
+    this.resultLayer = el('div', { className: 'park-result' });
+
+    this.stage = el('div', { className: 'stage stage--park' }, [
+      this.canvas,
+      this.missionList,
+      this.friendsList,
+      this.emoteBar,
+      this.rideStatus,
+      this.ridePrompt,
+      this.reticle,
+      this.hint,
+      this.promptButton,
+      this.queueCard,
+      this.cutterButton,
+      touch,
+      this.actionButton,
+      this.resultLayer,
+    ]);
+    this.showBanner = createBanner(this.stage);
+    root.append(el('main', { className: 'page game-page park-page' }, [this.header.element, this.stage]));
+  }
+
+  showNoWebGl() {
+    this.stage.replaceChildren(
+      el('div', { className: 'park-error' }, [
+        el('strong', { text: '😢 Este dispositivo no puede mostrar el parque en 3D.' }),
+        el('button', { className: 'btn btn--primary', text: 'Volver', attrs: { type: 'button' }, on: { click: () => navigate('/parque') } }),
+      ]),
+    );
+  }
+
+  /** Los botones pierden el foco al pulsarlos: así Espacio sigue siendo «saltar». */
+  handleButton(event, action) {
+    event.currentTarget.blur();
+    sounds.click();
+    action();
+  }
+
+  setMode(mode) {
+    this.stage.dataset.mode = mode;
+  }
+
+  resize() {
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    if (!width || !height) return;
+    this.renderer.setSize(width, height, false);
+    this.aspect = width / height;
+  }
+
+  // ---------- Controles ----------
+
+  bindControls() {
+    const press = (action) => {
+      if (action === 'pause') return this.pause();
+      if (this.status === 'result') {
+        if (['jump', 'interact'].includes(action)) this.closeResult();
+        return;
+      }
+      if (action in this.keys) this.keys[action] = true;
+      if (this.status === 'ride') {
+        if (['jump', 'interact'].includes(action)) this.pressRideAction();
+        return;
+      }
+      if (action === 'jump') this.requestJump();
+      if (action === 'interact') this.interact();
+      if (action.startsWith('emote-')) this.emote(EMOTES[Number(action.slice(6))]);
+    };
+    const release = (action) => {
+      if (action in this.keys) this.keys[action] = false;
+      if (['jump', 'interact'].includes(action)) this.rideInput.action = false;
+    };
+
+    return [
+      bindKeyboard(
+        {
+          forward: ['ArrowUp', 'KeyW'],
+          back: ['ArrowDown', 'KeyS'],
+          left: ['ArrowLeft', 'KeyA'],
+          right: ['ArrowRight', 'KeyD'],
+          run: ['ShiftLeft', 'ShiftRight'],
+          jump: ['Space'],
+          interact: ['KeyE', 'Enter', 'NumpadEnter'],
+          pause: ['KeyP', 'Escape'],
+          ...Object.fromEntries(EMOTES.map((_, index) => [`emote-${index}`, [`Digit${index + 1}`, `Numpad${index + 1}`]])),
+        },
+        { onPress: (action, repeat) => !repeat && press(action), onRelease: release },
+      ),
+      bindHoldButton(this.jumpButton, { onPress: () => this.requestJump() }),
+      bindHoldButton(this.actionButton, { onPress: () => this.pressRideAction(), onRelease: () => (this.rideInput.action = false) }),
+      bindHoldButton(this.steerLeft, { onPress: () => (this.touchSteer.left = true), onRelease: () => (this.touchSteer.left = false) }),
+      bindHoldButton(this.steerRight, { onPress: () => (this.touchSteer.right = true), onRelease: () => (this.touchSteer.right = false) }),
+      this.bindCameraDrag(),
+      () => this.joystick.destroy(),
+    ];
+  }
+
+  /** Arrastrar sobre el parque gira la cámara (o la mirada, en la rueda). */
+  bindCameraDrag() {
+    let pointerId = null;
+    let lastX = 0;
+    let lastY = 0;
+    const down = (event) => {
+      if (pointerId !== null) return;
+      pointerId = event.pointerId;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      this.canvas.setPointerCapture(pointerId);
+    };
+    const move = (event) => {
+      if (event.pointerId !== pointerId) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      if (this.status === 'ride') {
+        this.rideInput.lookDelta += dx * 0.006;
+        return;
+      }
+      this.cameraYaw -= dx * 0.008;
+      this.cameraPitch = clamp(this.cameraPitch + dy * 0.005, 0.12, 1.1);
+      this.dragHold = DRAG_HOLD_SECONDS;
+    };
+    const up = (event) => {
+      if (event.pointerId === pointerId) pointerId = null;
+    };
+    const events = [
+      ['pointerdown', down],
+      ['pointermove', move],
+      ['pointerup', up],
+      ['pointercancel', up],
+    ];
+    events.forEach(([name, handler]) => this.canvas.addEventListener(name, handler));
+    return () => events.forEach(([name, handler]) => this.canvas.removeEventListener(name, handler));
+  }
+
+  pressRideAction() {
+    if (this.status !== 'ride') return;
+    this.rideInput.action = true;
+    this.rideInput.actionPressed = true;
+  }
+
+  requestJump() {
+    if (this.status !== 'walk') return;
+    const { player } = this;
+    if (!player.onGround && player.airTime > COYOTE_SECONDS) return;
+    player.vy = JUMP_SPEED;
+    player.onGround = false;
+    player.airTime = COYOTE_SECONDS + 1;
+    sounds.jump();
+    this.progress('jump');
+  }
+
+  // ---------- Bucle ----------
+
+  update(delta) {
+    this.park.update(delta);
+    this.crowd.update(delta);
+    this.updateFriends(delta);
+    this.animatePickups(delta);
+    if (this.hintTimer > 0) {
+      this.hintTimer -= delta;
+      if (this.hintTimer <= 0) this.hint.hidden = true;
+    }
+
+    if (this.status === 'walk') {
+      this.updateWalk(delta);
+      this.updatePrompt();
+    } else if (this.status === 'queue') {
+      this.updateQueue(delta);
+    } else if (this.status === 'ride') {
+      this.updateRide(delta);
+      return;
+    }
+    this.syncAvatar(delta);
+    this.updateCamera(delta);
+  }
+
+  render() {
+    const camera = this.rideRun ? this.rideRun.session.camera : this.camera;
+    const scene = this.rideRun?.session.scene ?? this.scene;
+    if (camera.aspect !== this.aspect) {
+      camera.aspect = this.aspect;
+      camera.updateProjectionMatrix();
+    }
+    this.renderer.render(scene, camera);
+  }
+
+  movementInput() {
+    const { keys, joystick } = this;
+    let forward = (keys.forward ? 1 : 0) - (keys.back ? 1 : 0) + joystick.vector.y;
+    let strafe = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + joystick.vector.x;
+    const length = Math.hypot(forward, strafe);
+    if (length > 1) {
+      forward /= length;
+      strafe /= length;
+    }
+    return { forward, strafe, amount: Math.min(1, length) };
+  }
+
+  updateWalk(delta) {
+    const { player } = this;
+    const { forward, strafe, amount } = this.movementInput();
+    const sin = Math.sin(this.cameraYaw);
+    const cos = Math.cos(this.cameraYaw);
+    const dirX = -sin * forward + cos * strafe;
+    const dirZ = -cos * forward - sin * strafe;
+    const speed = WALK_SPEED * (this.keys.run ? RUN_FACTOR : 1);
+    player.x += dirX * speed * delta;
+    player.z += dirZ * speed * delta;
+    player.speed = amount * speed;
+
+    if (amount > 0.1) {
+      if (this.hintTimer > 0 && this.hintTimer < HINT_SECONDS - 1.5) this.hintTimer = Math.min(this.hintTimer, 0.01);
+      const heading = Math.atan2(dirX, dirZ);
+      player.heading += angleDiff(heading, player.heading) * Math.min(1, delta * 12);
+      // La cámara se pone poco a poco detrás cuando se camina hacia delante.
+      if (forward > 0.2 && this.dragHold <= 0) {
+        this.cameraYaw += angleDiff(player.heading + Math.PI, this.cameraYaw) * Math.min(1, delta * CAMERA_FOLLOW_RATE * forward);
+      }
+    }
+    this.dragHold -= delta;
+
+    player.vy -= GRAVITY * delta;
+    player.y += player.vy * delta;
+    resolveCollisions(this.park.colliders, player, PLAYER_RADIUS);
+    this.crowd.bodies().forEach((body) => {
+      const dx = player.x - body.x;
+      const dz = player.z - body.z;
+      const distance = Math.hypot(dx, dz);
+      const minDistance = PLAYER_RADIUS + PERSON_RADIUS;
+      if (distance > 1e-3 && distance < minDistance) {
+        player.x = body.x + (dx / distance) * minDistance;
+        player.z = body.z + (dz / distance) * minDistance;
+      }
+    });
+    const fromCenter = Math.hypot(player.x, player.z);
+    if (fromCenter > PARK_RADIUS) {
+      player.x *= PARK_RADIUS / fromCenter;
+      player.z *= PARK_RADIUS / fromCenter;
+    }
+    const ground = groundHeight(this.park.colliders, player.x, player.z, player.y);
+    if (player.y <= ground) {
+      player.y = ground;
+      player.vy = 0;
+      player.onGround = true;
+      player.airTime = 0;
+    } else {
+      player.onGround = false;
+      player.airTime += delta;
+    }
+    this.collectPickups();
+  }
+
+  syncAvatar(delta) {
+    const { player, avatar } = this;
+    avatar.root.position.set(player.x, player.y, player.z);
+    this.danceTimer -= delta;
+    avatar.root.rotation.y = player.heading + (this.danceTimer > 0 ? (1 - this.danceTimer / DANCE_SECONDS) * Math.PI * 4 : 0);
+    if (this.bubbleTimer > 0) {
+      this.bubbleTimer -= delta;
+      if (this.bubbleTimer <= 0) this.bubble.sprite.visible = false;
+    }
+    const ground = groundHeight(this.park.colliders, player.x, player.z, player.y);
+    avatar.shadow.position.set(player.x, ground + 0.03, player.z);
+    avatar.update(delta, { speed: player.speed, airborne: !player.onGround && player.airTime > COYOTE_SECONDS });
+  }
+
+  updateCamera(delta) {
+    const { player } = this;
+    const flat = Math.cos(this.cameraPitch) * CAMERA_DISTANCE;
+    const target = new THREE.Vector3(player.x, player.y + 1.6, player.z);
+    const desired = new THREE.Vector3(
+      player.x + Math.sin(this.cameraYaw) * flat,
+      player.y + 1.5 + Math.sin(this.cameraPitch) * CAMERA_DISTANCE,
+      player.z + Math.cos(this.cameraYaw) * flat,
+    );
+    this.camera.position.lerp(desired, Math.min(1, delta * 10));
+    this.camera.lookAt(target);
+  }
+
+  // ---------- Monedas y granos dorados ----------
+
+  buildCoins() {
+    this.coins = Array.from({ length: COIN_COUNT }, () => {
+      const coin = new THREE.Group();
+      const disc = this.kit.cyl(0.42, 0.42, 0.1, 0xffc21a, 16, { emissive: 0x4a3400 });
+      disc.rotation.x = Math.PI / 2;
+      coin.add(disc, at(this.kit.cyl(0.25, 0.25, 0.12, 0xffe680, 12), 0, 0, 0));
+      coin.children[1].rotation.x = Math.PI / 2;
+      this.scene.add(coin);
+      const entry = { mesh: coin, respawn: 0 };
+      this.placeCoin(entry);
+      return entry;
+    });
+  }
+
+  placeCoin(entry) {
+    const queueSegments = RIDES.map((ride) => [slotPosition(ride, -1), slotPosition(ride, MAX_QUEUE + 1)]);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 6 + Math.random() * (PARK_RADIUS - 8);
+      const x = Math.sin(angle) * radius;
+      const z = Math.cos(angle) * radius;
+      if (isBlocked(this.park.colliders, x, z, 1)) continue;
+      if (queueSegments.some(([a, b]) => distanceToSegment({ x, z }, a, b) < 1.8)) continue;
+      entry.mesh.position.set(x, 1, z);
+      entry.mesh.visible = true;
+      return;
+    }
+    entry.mesh.visible = false;
+    entry.respawn = COIN_RESPAWN_SECONDS;
+  }
+
+  buildBeans() {
+    const collected = getGameData('park').goldenBeans;
+    this.beans = GOLDEN_BEANS.filter((bean) => !collected.includes(bean.id)).map((bean) => {
+      const mesh = at(new THREE.Group(), bean.x, bean.y, bean.z);
+      const body = this.kit.sphere(0.4, 0xffd21f, 12, { emissive: 0x6a4a00 });
+      body.scale.set(0.8, 1.1, 0.6);
+      const halo = this.kit.torus(0.75, 0.05, 0xfff2a8, { emissive: 0x806a00 });
+      mesh.add(body, at(this.kit.box(0.06, 0.7, 0.02, 0x8a6200), 0, 0, 0.24), halo);
+      this.scene.add(mesh);
+      return { bean, mesh, halo };
+    });
+  }
+
+  animatePickups(delta) {
+    this.coins.forEach((entry) => {
+      if (!entry.mesh.visible) {
+        entry.respawn -= delta;
+        if (entry.respawn <= 0) this.placeCoin(entry);
+        return;
+      }
+      entry.mesh.rotation.y += delta * 3;
+    });
+    this.beans.forEach(({ bean, mesh, halo }) => {
+      mesh.rotation.y += delta * 1.5;
+      mesh.position.y = bean.y + Math.sin(performance.now() / 400) * 0.15;
+      halo.rotation.x += delta * 2;
+    });
+  }
+
+  collectPickups() {
+    const { player } = this;
+    const near = (position, radius) =>
+      Math.hypot(position.x - player.x, position.z - player.z) < radius && Math.abs(position.y - (player.y + 1)) < 1.6;
+
+    this.coins.forEach((entry) => {
+      if (!entry.mesh.visible || !near(entry.mesh.position, PICK_RADIUS)) return;
+      entry.mesh.visible = false;
+      entry.respawn = COIN_RESPAWN_SECONDS;
+      sounds.coin();
+      this.addCoins(1);
+      this.progress('coin');
+    });
+
+    this.beans = this.beans.filter((entry) => {
+      if (!near(entry.mesh.position, PICK_RADIUS + 0.2)) return true;
+      this.scene.remove(entry.mesh);
+      const data = getGameData('park');
+      const goldenBeans = [...data.goldenBeans, entry.bean.id];
+      updateGameData('park', { goldenBeans, coins: data.coins + BEAN_COINS });
+      sounds.achievement();
+      this.notify(`🌟 ¡Grano dorado! ${goldenBeans.length}/${GOLDEN_BEANS.length} · +${BEAN_COINS} 🪙`);
+      this.friends?.say('bean');
+      trackEvent('parque-grano-dorado', 'Parque · grano dorado');
+      this.progress('bean');
+      this.refreshHud();
+      this.checkStickers();
+      return false;
+    });
+  }
+
+  addCoins(amount) {
+    const data = getGameData('park');
+    updateGameData('park', { coins: data.coins + amount });
+    this.refreshHud();
+  }
+
+  // ---------- Filas ----------
+
+  nearestQueue() {
+    const { player } = this;
+    if (player.y > 1) return null;
+    let best = null;
+    let bestDistance = QUEUE_PROMPT_DISTANCE;
+    RIDES.forEach((ride) => {
+      const distance = distanceToSegment(player, slotPosition(ride, -1), slotPosition(ride, MAX_QUEUE));
+      if (distance < bestDistance) {
+        best = ride;
+        bestDistance = distance;
+      }
+    });
+    return best;
+  }
+
+  updatePrompt() {
+    const ride = this.nearestQueue();
+    this.promptRide = ride;
+    this.promptButton.hidden = !ride;
+    if (!ride) return;
+    const people = this.crowd.getQueue(ride.id).people.length;
+    const text = `${ride.emoji} Hacer fila: ${ride.name} · 👥 ${people}  (E)`;
+    if (this.promptButton.textContent !== text) this.promptButton.textContent = text;
+  }
+
+  interact() {
+    if (this.status === 'queue') {
+      if (this.cutter) this.snitch();
+      return;
+    }
+    if (this.status !== 'walk' || !this.promptRide) return;
+    this.joinQueue(this.promptRide);
+  }
+
+  joinQueue(ride) {
+    if (this.crowd.getQueue(ride.id).people.length >= MAX_QUEUE) {
+      this.showBanner('😅 ¡La fila está llena! Prueba en un ratito');
+      return;
+    }
+    sounds.checkpoint();
+    this.crowd.joinPlayer(ride.id, (boarded, via) => this.startRide(boarded, via));
+    this.queueRide = ride;
+    this.status = 'queue';
+    this.queueMoveTimer = 0;
+    this.cutter = null;
+    this.cutterTried = false;
+    this.cutterTimer = 4 + Math.random() * 5;
+    this.promptButton.hidden = true;
+    this.player.vy = 0;
+    this.setMode('queue');
+    this.hint.hidden = true;
+  }
+
+  updateQueue(delta) {
+    const ride = this.queueRide;
+    const { player } = this;
+    const index = this.crowd.playerIndex(ride.id);
+    if (index < 0) return;
+    const slot = slotPosition(ride, index);
+    const dx = slot.x - player.x;
+    const dz = slot.z - player.z;
+    const distance = Math.hypot(dx, dz);
+    player.y = Math.max(0, player.y - delta * 6);
+    player.onGround = true;
+    if (distance > 0.05) {
+      const step = Math.min(distance, QUEUE_WALK_SPEED * delta);
+      player.x += (dx / distance) * step;
+      player.z += (dz / distance) * step;
+      player.speed = QUEUE_WALK_SPEED;
+      player.heading += angleDiff(Math.atan2(dx, dz), player.heading) * Math.min(1, delta * 10);
+    } else {
+      player.speed = 0;
+      player.heading += angleDiff(Math.atan2(-ride.queueDir.x, -ride.queueDir.z), player.heading) * Math.min(1, delta * 6);
+    }
+
+    const queue = this.crowd.getQueue(ride.id);
+    const text = index === 0 ? '¡Te toca ya! 🎉' : `${ride.emoji} ${ride.name} · 👥 Delante: ${index} · ⏳ ${Math.ceil(waitSeconds(queue, index))} s`;
+    if (this.queueText.textContent !== text) this.queueText.textContent = text;
+    const coins = getGameData('park').coins;
+    this.fastPassButton.textContent = `🎟️ Pase rápido · ${ride.fastPassPrice} 🪙`;
+    this.fastPassButton.disabled = coins < ride.fastPassPrice;
+
+    // Moverse un rato con las flechas o el joystick saca de la fila.
+    this.queueMoveTimer = this.movementInput().amount > 0.5 ? this.queueMoveTimer + delta : 0;
+    if (this.queueMoveTimer > LEAVE_QUEUE_SECONDS) {
+      this.leaveQueue();
+      return;
+    }
+    this.updateCutter(delta, index);
+  }
+
+  updateCutter(delta, index) {
+    if (this.cutter) {
+      this.cutterAlert -= delta;
+      if (this.cutter.state !== 'queue' || this.cutter.rideId !== this.queueRide.id) {
+        this.hideCutter();
+      } else if (this.cutterAlert <= 0) {
+        this.crowd.giveUpCutter(this.cutter);
+        this.hideCutter();
+      }
+      return;
+    }
+    if (this.cutterTried || index < 2) return;
+    this.cutterTimer -= delta;
+    if (this.cutterTimer > 0) return;
+    this.cutterTried = true;
+    if (Math.random() > 0.6) return;
+    this.cutter = this.crowd.startCutter(this.queueRide.id);
+    if (!this.cutter) return;
+    this.cutterAlert = CUTTER_ALERT_SECONDS;
+    this.cutterButton.classList.add('is-visible');
+    sounds.alert();
+  }
+
+  hideCutter() {
+    this.cutter = null;
+    this.cutterButton.classList.remove('is-visible');
+  }
+
+  snitch() {
+    if (!this.cutter) return;
+    this.crowd.expelCutter(this.cutter);
+    this.hideCutter();
+    const data = getGameData('park');
+    updateGameData('park', { coins: data.coins + SNITCH_COINS, snitches: data.snitches + 1 });
+    sounds.levelUp();
+    this.notify(`👮 ¡Gracias por avisar! +${SNITCH_COINS} 🪙`);
+    this.playerSay(SAYINGS.snitch.text);
+    this.friends?.say('snitch', this.queueRide?.id);
+    trackEvent('parque-colado', 'Parque · aviso al vigilante');
+    this.progress('snitch');
+    this.refreshHud();
+    this.checkStickers();
+  }
+
+  useFastPass() {
+    const ride = this.queueRide;
+    if (this.status !== 'queue' || !ride) return;
+    const data = getGameData('park');
+    if (data.coins < ride.fastPassPrice) return;
+    updateGameData('park', { coins: data.coins - ride.fastPassPrice, fastPasses: data.fastPasses + 1 });
+    sounds.cash();
+    this.friends?.say('fastpass', ride.id);
+    trackEvent('parque-pase-rapido', 'Parque · pase rápido');
+    this.refreshHud();
+    this.progress('fastpass');
+    this.checkStickers();
+    this.crowd.boardPlayerNow(ride.id);
+  }
+
+  leaveQueue() {
+    if (this.status !== 'queue') return;
+    this.crowd.leavePlayer(this.queueRide.id);
+    if (this.cutter) this.crowd.giveUpCutter(this.cutter);
+    this.hideCutter();
+    this.queueRide = null;
+    this.status = 'walk';
+    this.setMode('walk');
+    // Un pasito fuera de la baranda.
+    this.player.x += Math.cos(this.player.heading) * 1.4;
+    this.player.z -= Math.sin(this.player.heading) * 1.4;
+  }
+
+  // ---------- Atracciones ----------
+
+  startRide(ride, via) {
+    if (this.cutter) this.crowd.giveUpCutter(this.cutter);
+    this.hideCutter();
+    this.queueRide = null;
+    this.status = 'ride';
+    this.avatar.root.visible = false;
+    this.avatar.shadow.visible = false;
+    if (via === 'queue') this.progress('queue');
+    const session = RIDE_FACTORIES[ride.id]({
+      kit: this.kit,
+      park: this.park,
+      scene: this.scene,
+      look: this.look,
+      random: Math.random,
+      // Lo que pasa en la atracción (p. ej. un grito) lo ven las amigas.
+      announce: (kind) => this.friends?.say(kind, ride.id),
+    });
+    this.rideRun = { ride, session };
+    Object.assign(this.rideInput, { action: false, actionPressed: false, lookDelta: 0 });
+    const { action, steer } = session.controls;
+    this.actionButton.querySelector('.park-action__icon').textContent = action.icon;
+    this.actionButton.querySelector('.park-action__label').textContent = action.label;
+    this.stage.classList.toggle('has-steer', steer);
+    this.stage.classList.toggle('has-reticle', Boolean(session.reticle));
+    this.setMode('ride');
+    this.showBanner(`${ride.emoji} ${session.intro}`, 3200);
+    sounds.levelUp();
+    trackEvent(`parque-${ride.id}`, `Parque · ${ride.name}`);
+  }
+
+  updateRide(delta) {
+    const { session } = this.rideRun;
+    this.rideInput.left = this.keys.left || this.touchSteer.left;
+    this.rideInput.right = this.keys.right || this.touchSteer.right;
+    session.update(delta, this.rideInput);
+    this.rideInput.actionPressed = false;
+    this.rideInput.lookDelta = 0;
+    const status = session.status();
+    if (this.rideStatus.textContent !== status) this.rideStatus.textContent = status;
+    const prompt = session.prompt();
+    if (this.ridePrompt.textContent !== prompt) {
+      this.ridePrompt.textContent = prompt;
+      this.ridePrompt.classList.remove('is-pop');
+      void this.ridePrompt.offsetWidth;
+      if (prompt) this.ridePrompt.classList.add('is-pop');
+    }
+    if (session.done) this.finishRide();
+  }
+
+  finishRide() {
+    const { ride, session } = this.rideRun;
+    // Foto del último momento (se lee el canvas justo después de dibujar).
+    this.render();
+    let photo = '';
+    try {
+      photo = this.canvas.toDataURL('image/jpeg', 0.75);
+    } catch {
+      photo = '';
+    }
+    const result = session.result();
+    session.dispose();
+    this.rideRun = null;
+
+    const data = getGameData('park');
+    const firstTime = !data.ridesDone[ride.id];
+    const bonus = firstTime ? FIRST_RIDE_BONUS : 0;
+    updateGameData('park', {
+      coins: data.coins + result.coins + bonus,
+      ridesDone: { ...data.ridesDone, [ride.id]: (data.ridesDone[ride.id] ?? 0) + 1 },
+      totalRides: data.totalRides + 1,
+    });
+    this.progress('ride');
+    this.progress(`ride-${ride.id}`);
+    this.friends?.say('ride', ride.id);
+
+    // Sale junto al final de la fila, mirando a la plaza (la cámara queda lejos del arco).
+    const side = { x: -ride.queueDir.z, z: ride.queueDir.x };
+    const exit = slotPosition(ride, MAX_QUEUE + 1);
+    Object.assign(this.player, {
+      x: exit.x + side.x * 2.4,
+      z: exit.z + side.z * 2.4,
+      y: 0,
+      vy: 0,
+      speed: 0,
+    });
+    this.player.heading = Math.atan2(-this.player.x, -this.player.z);
+    this.cameraYaw = this.player.heading + Math.PI;
+    this.camera.position.set(this.player.x - Math.sin(this.player.heading) * CAMERA_DISTANCE, 5, this.player.z - Math.cos(this.player.heading) * CAMERA_DISTANCE);
+    this.avatar.root.visible = true;
+    this.avatar.shadow.visible = true;
+
+    this.status = 'result';
+    this.setMode('result');
+    sounds.win();
+    this.refreshHud();
+    this.showResult({ ride, result, photo, bonus });
+    this.checkStickers();
+  }
+
+  showResult({ ride, result, photo, bonus }) {
+    const stats = [
+      ...result.stats,
+      { label: 'Monedas', value: `+${result.coins} 🪙` },
+      bonus ? { label: '¡Primera vez!', value: `+${bonus} 🪙` } : null,
+    ].filter(Boolean);
+    const closeButton = el('button', {
+      className: 'btn btn--primary btn--lg',
+      text: '¡Seguir paseando! ▶',
+      attrs: { type: 'button' },
+      on: { click: (event) => this.handleButton(event, () => this.closeResult(true)) },
+    });
+    const card = el('div', { className: 'park-result__card', attrs: { role: 'dialog', 'aria-label': result.title } }, [
+      el('figure', { className: 'park-photo' }, [
+        photo ? el('img', { attrs: { src: photo, alt: `Foto en ${ride.name}` } }) : el('div', { className: 'park-photo__empty', text: result.emoji }),
+        el('figcaption', { text: `${ride.emoji} ${ride.name}` }),
+      ]),
+      el('h2', { className: 'park-result__title', text: result.title }),
+      el(
+        'dl',
+        { className: 'modal__stats' },
+        stats.map(({ label, value }) => el('div', { className: 'modal__stat' }, [el('dt', { text: label }), el('dd', { text: value })])),
+      ),
+      closeButton,
+    ]);
+    this.resultLayer.replaceChildren(card);
+    this.resultShownAt = performance.now();
+  }
+
+  closeResult(force = false) {
+    if (this.status !== 'result') return;
+    if (!force && performance.now() - this.resultShownAt < RESULT_ARM_MS) return;
+    this.resultLayer.replaceChildren();
+    this.status = 'walk';
+    this.setMode('walk');
+  }
+
+  // ---------- Premios ----------
+
+  welcome() {
+    const data = getGameData('park');
+    if (data.welcomed) return;
+    updateGameData('park', { welcomed: true, coins: data.coins + WELCOME_COINS });
+    this.refreshHud();
+    this.notify(`🎁 ¡Regalo de bienvenida! +${WELCOME_COINS} 🪙`);
+  }
+
+  /** Suma progreso a las misiones del día y paga las que se completan. */
+  progress(event, amount = 1) {
+    const data = getGameData('park');
+    const { missions, changed, completed, allDone } = recordMission(data, event, amount);
+    if (!changed) return;
+    const reward = completed.length * MISSION_COINS + (allDone ? ALL_MISSIONS_BONUS : 0);
+    updateGameData('park', { missions, coins: data.coins + reward, missionsDone: data.missionsDone + completed.length });
+    completed.forEach((mission) => {
+      this.notify(`✅ ${mission.icon} ${mission.text} · +${MISSION_COINS} 🪙`);
+      trackEvent('parque-mision', 'Parque · misión cumplida');
+    });
+    if (allDone) this.notify(`🏆 ¡Todas las misiones de hoy! +${ALL_MISSIONS_BONUS} 🪙`);
+    if (completed.length) {
+      sounds.achievement();
+      this.refreshHud();
+      this.checkStickers();
+    }
+    this.refreshMissions();
+  }
+
+  refreshMissions() {
+    const missions = describeMissions(todaysMissions(getGameData('park')));
+    this.missionList.replaceChildren(
+      el('li', { className: 'park-missions__title', text: '📋 Misiones de hoy' }),
+      ...missions.map((mission) =>
+        el('li', { className: mission.done ? 'is-done' : '' }, [
+          el('span', { text: `${mission.done ? '✅' : mission.icon} ${mission.text}` }),
+          el('small', { text: mission.done ? '' : `${mission.progress}/${mission.goal}` }),
+        ]),
+      ),
+    );
+  }
+
+  refreshHud() {
+    const data = getGameData('park');
+    this.header.set('coins', data.coins);
+    this.header.set('beans', `${data.goldenBeans.length}/${GOLDEN_BEANS.length}`);
+    this.header.set('rides', data.totalRides);
+  }
+
+  checkStickers() {
+    syncStickers().forEach((sticker) => this.notify(`📒 ¡Pegatina nueva! ${sticker.icon} ${sticker.name}`));
+  }
+
+  /** Mensajes en fila: se muestran uno detrás de otro. */
+  notify(text) {
+    this.toasts.push(text);
+    if (this.toasts.length === 1) this.showNextToast();
+  }
+
+  showNextToast() {
+    if (!this.toasts.length) return;
+    this.showBanner(this.toasts[0], TOAST_MS);
+    this.timers.push(
+      setTimeout(() => {
+        this.toasts.shift();
+        this.showNextToast();
+      }, TOAST_MS + 150),
+    );
+  }
+
+  // ---------- Amigas y saludos ----------
+
+  startFriends() {
+    if (!this.withFriends) return;
+    if (!this.friends) {
+      this.notify('😢 Se perdió la sala de amigas. Sigues jugando sola.');
+      return;
+    }
+    const data = getGameData('park');
+    updateGameData('park', { friendVisits: data.friendVisits + 1 });
+    trackEvent('parque-amigas', 'Parque · con amigas');
+    this.notify('👭 ¡Tus amigas están en el parque! Salúdalas con 👋');
+    this.checkStickers();
+  }
+
+  /** Burbuja sobre la cabeza de la jugadora. */
+  playerSay(text) {
+    this.bubble.setText(text);
+    this.bubble.sprite.visible = true;
+    this.bubbleTimer = BUBBLE_SECONDS;
+  }
+
+  emote(kind) {
+    if (!kind || this.emoteCooldown > 0 || !['walk', 'queue'].includes(this.status)) return;
+    this.emoteCooldown = EMOTE_COOLDOWN;
+    this.playerSay(SAYINGS[kind].text);
+    if (kind === 'dance') this.danceTimer = DANCE_SECONDS;
+    sounds.click();
+    this.crowd.reactTo(this.player, kind);
+    this.friends?.say(kind);
+  }
+
+  updateFriends(delta) {
+    this.emoteCooldown -= delta;
+    if (!this.friends) return;
+    const rideId = this.rideRun?.ride.id ?? this.queueRide?.id ?? '';
+    const mode = this.status === 'paused' ? this.pausedFrom : this.status;
+    this.friends.update(delta, {
+      x: this.player.x,
+      y: this.player.y,
+      z: this.player.z,
+      heading: this.player.heading,
+      speed: this.player.speed,
+      airborne: !this.player.onGround,
+      mode,
+      rideId,
+    });
+    this.friendsPanelTimer -= delta;
+    if (this.friendsPanelTimer <= 0) {
+      this.friendsPanelTimer = FRIENDS_PANEL_EVERY;
+      this.refreshFriends();
+    }
+  }
+
+  /** Panel con lo que está haciendo cada amiga. */
+  refreshFriends() {
+    const friends = this.friends?.list() ?? [];
+    const rows = friends.map((friend) => {
+      const { target } = friend;
+      const ride = getRide(target?.rideId);
+      let doing = '🔌 Conectando…';
+      if (friend.flashTimer > 0) doing = friend.flash;
+      else if (target?.mode === 'ride' && ride) doing = `${ride.emoji} En ${ride.name}`;
+      else if (target?.mode === 'queue' && ride) doing = `⏳ Fila de ${ride.name}`;
+      else if (target) doing = target.speed > 0.5 ? '🚶 Paseando' : '🙂 Por aquí';
+      return `${friend.emoji} ${friend.name}|${doing}`;
+    });
+    const key = rows.join('·');
+    if (key === this.friendsKey) return;
+    this.friendsKey = key;
+    this.friendsList.hidden = !rows.length;
+    this.friendsList.replaceChildren(
+      el('li', { className: 'park-friends__title', text: '👭 Amigas' }),
+      ...rows.map((row) => {
+        const [name, doing] = row.split('|');
+        return el('li', {}, [el('strong', { text: name }), el('small', { text: doing })]);
+      }),
+    );
+  }
+
+  handleFriendEvent(event) {
+    if (event.type === 'closed') {
+      this.notify('👋 La sala se cerró. Sigues jugando sola.');
+      this.refreshFriends();
+      return;
+    }
+    const { friend } = event;
+    const who = `${friend.emoji} ${friend.name}`;
+    if (event.type === 'left') {
+      this.notify(`👋 ${who} se fue del parque`);
+      this.refreshFriends();
+      return;
+    }
+    const ride = getRide(event.rideId);
+    if (event.kind === 'ride' && ride) this.notify(`${ride.emoji} ${who} montó en ${ride.name}`);
+    else if (event.kind === 'snitch') this.notify(`👮 ${who} le avisó al vigilante`);
+    else if (event.kind === 'bean') this.notify(`🌟 ${who} encontró un grano dorado`);
+    else if (event.kind === 'follow') this.notify(`🏃 ${who} dice: ¡Sígueme!`);
+    if (SAYINGS[event.kind]?.emote) sounds.click();
+    this.refreshFriends();
+  }
+
+  // ---------- Pausa y salida ----------
+
+  pause() {
+    if (this.status === 'paused' || !this.loop) return;
+    this.pausedFrom = this.status;
+    this.status = 'paused';
+    this.loop.stop();
+    this.music.stop();
+    Object.keys(this.keys).forEach((key) => (this.keys[key] = false));
+    this.rideInput.action = false;
+    this.joystick.reset();
+    const missions = describeMissions(todaysMissions(getGameData('park')));
+    showModal({
+      emoji: '⏸️',
+      title: 'Pausa',
+      message: this.pausedFrom === 'ride' ? 'La atracción te espera.' : 'Tus misiones de hoy:',
+      stats: missions.map((mission) => ({
+        label: `${mission.icon} ${mission.text}`,
+        value: mission.done ? '✅' : `${mission.progress}/${mission.goal}`,
+      })),
+      escapeIndex: 0,
+      actions: [
+        { label: 'Continuar ▶', variant: 'primary', onClick: () => this.resume() },
+        { label: 'Salir del parque', onClick: () => navigate('/parque') },
+      ],
+    });
+  }
+
+  resume() {
+    if (this.status !== 'paused') return;
+    this.status = this.pausedFrom;
+    this.loop.start();
+    this.music.start();
+  }
+
+  destroy() {
+    this.timers.forEach((timer) => clearTimeout(timer));
+    closeModal();
+    if (!this.loop) {
+      this.kit.dispose();
+      this.renderer?.dispose();
+      return;
+    }
+    this.loop.destroy();
+    this.music.stop();
+    this.unbinders.forEach((unbind) => unbind());
+    this.resizeObserver.disconnect();
+    this.rideRun?.session.dispose();
+    this.friends?.destroy();
+    this.scene.traverse((object) => object.isInstancedMesh && object.dispose());
+    this.kit.dispose();
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
+  }
+}
+
+export function mountParkGame(root, params) {
+  const game = new ParkGame(root, params);
+  return () => game.destroy();
+}

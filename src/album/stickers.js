@@ -4,16 +4,19 @@
  * cofre (`chest: true`) solo salen al abrirlo. Datos del jugador en getGameData('album').
  */
 import { getActivePlayer, getGameData, updateGameData } from '../core/player.js';
+import { localDay } from '../core/date.js';
 import { DINO_WORLDS, savedMedals } from '../games/dino/worlds.js';
 import { DINOS, isDinoUnlocked } from '../games/dino/dinos.js';
 import { GEO_LEVELS, GEO_WORLDS } from '../games/geo/levels.js';
 import { ACHIEVEMENTS, countStars as countGeoStars } from '../games/geo/achievements.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
+import { GOLDEN_BEANS, RIDES } from '../games/park/worlds.js';
 
 export const STICKER_GROUPS = [
   { id: 'dino', title: '🦖 Dino Corre', color: '#4dd4ac' },
   { id: 'geo', title: '🔷 Salto Geométrico', color: '#7b5cff' },
   { id: 'tetris', title: '🧱 Bloques Mágicos', color: '#ff9f43' },
+  { id: 'park', title: '🎡 Parque Mágico', color: '#ff5f5f' },
   { id: 'race', title: '🏁 Carreras con amigos', color: '#5ab0ff' },
   { id: 'chest', title: '🎁 Sorpresas del cofre', color: '#ff5fa2' },
   { id: 'special', title: '🌟 Especiales', color: '#ffc21a' },
@@ -61,6 +64,22 @@ export const STICKERS = [
     tetris.unlockedWorld >= TETRIS_WORLDS.length - 1,
   ),
 
+  ...RIDES.map((ride) =>
+    sticker('park', `park-${ride.id}`, ride.emoji, ride.name, `Monta en ${ride.name}`, ({ park }) => (park.ridesDone[ride.id] ?? 0) >= 1),
+  ),
+  sticker('park', 'park-all-rides', '🎠', 'Todo el parque', 'Monta en todas las atracciones', ({ park }) =>
+    RIDES.every((ride) => (park.ridesDone[ride.id] ?? 0) >= 1),
+  ),
+  sticker('park', 'park-fastpass', '🎟️', 'Pase rápido', 'Usa un pase rápido', ({ park }) => park.fastPasses >= 1),
+  sticker('park', 'park-snitch', '👮', 'Ayudante', 'Avísale al vigilante de alguien que se cuela', ({ park }) => park.snitches >= 1),
+  sticker('park', 'park-beans-5', '☕', 'Cafetera', 'Encuentra 5 granos dorados', ({ park }) => park.goldenBeans.length >= 5),
+  sticker('park', 'park-beans-all', '🌟', 'Todos los granos', 'Encuentra todos los granos dorados', ({ park }) =>
+    park.goldenBeans.length >= GOLDEN_BEANS.length,
+  ),
+  sticker('park', 'park-missions', '📋', 'Misionera', 'Cumple 10 misiones del parque', ({ park }) => park.missionsDone >= 10),
+  sticker('park', 'park-friends', '👭', 'Parque con amigas', 'Entra al parque con amigas', ({ park }) => park.friendVisits >= 1),
+  sticker('park', 'park-fashion', '🤠', 'Arriera elegante', 'Compra 3 cosas en la tienda del parque', ({ park }) => park.owned.length >= 3),
+
   sticker('race', 'race-first', '🏁', 'Primera carrera', 'Corre una carrera con amigos', (ctx) => races(ctx) >= 1),
   sticker('race', 'race-ten', '🎪', 'Diez carreras', 'Corre 10 carreras', (ctx) => races(ctx) >= 10),
   sticker('race', 'race-win', '🏆', 'Primera copa', 'Gana una carrera', (ctx) => raceWins(ctx) >= 1),
@@ -83,7 +102,7 @@ export const STICKERS = [
 export function syncStickers() {
   if (!getActivePlayer()) return [];
   const album = { ...getGameData('album') };
-  const ctx = { dino: getGameData('dino'), geo: getGameData('geo'), tetris: getGameData('tetris'), album };
+  const ctx = { dino: getGameData('dino'), geo: getGameData('geo'), tetris: getGameData('tetris'), park: getGameData('park'), album };
   const earned = [];
   // Dos pasadas: las especiales dependen de cuántas se tienen.
   for (let pass = 0; pass < 2; pass += 1) {
@@ -101,13 +120,7 @@ export function syncStickers() {
 
 const CHEST_COINS = [20, 25, 30, 40, 50];
 
-/** Fecha local (AAAA-MM-DD): el cofre se puede abrir una vez por día. */
-function today() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
-export const canOpenChest = () => getGameData('album').lastChest !== today();
+export const canOpenChest = () => getGameData('album').lastChest !== localDay();
 
 /**
  * Abre el cofre: la mitad de las veces una pegatina sorpresa (si quedan) y si no, monedas para Dino.
@@ -116,7 +129,7 @@ export const canOpenChest = () => getGameData('album').lastChest !== today();
 export function openChest() {
   const album = getGameData('album');
   const missing = STICKERS.filter((item) => item.chest && !album.stickers.includes(item.id));
-  const changes = { lastChest: today(), chestsOpened: album.chestsOpened + 1 };
+  const changes = { lastChest: localDay(), chestsOpened: album.chestsOpened + 1 };
   let reward;
   if (missing.length && Math.random() < 0.5) {
     const prize = missing[Math.floor(Math.random() * missing.length)];

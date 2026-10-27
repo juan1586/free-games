@@ -52,6 +52,18 @@ export const sounds = {
   checkpoint: () => playMelody([[880, 0, 0.06], [1175, 0.06, 0.1]], 'triangle'),
   turbo: () => playTone({ frequency: 180, endFrequency: 720, duration: 0.25, type: 'sawtooth', volume: 0.05 }),
   achievement: () => playMelody([[659, 0], [784, 0.1], [988, 0.2], [1319, 0.3], [1568, 0.42, 0.35]]),
+  scream: () => {
+    playTone({ frequency: 520, endFrequency: 1300, duration: 0.3, type: 'sawtooth', volume: 0.05 });
+    playTone({ frequency: 1300, endFrequency: 700, duration: 0.35, type: 'sawtooth', volume: 0.05, delay: 0.28 });
+  },
+  whoosh: () => playTone({ frequency: 900, endFrequency: 110, duration: 1, type: 'sine', volume: 0.1 }),
+  shutter: () => playTone({ frequency: 2200, endFrequency: 700, duration: 0.06, type: 'square', volume: 0.05 }),
+  pop: () => playTone({ frequency: 950, endFrequency: 180, duration: 0.14, type: 'triangle', volume: 0.12 }),
+  honk: () => playMelody([[392, 0, 0.14], [392, 0.18, 0.24]], 'square'),
+  splash: () => playTone({ frequency: 420, endFrequency: 90, duration: 0.3, type: 'triangle', volume: 0.1 }),
+  bump: () => playTone({ frequency: 150, endFrequency: 55, duration: 0.18, type: 'square', volume: 0.12 }),
+  cash: () => playMelody([[1319, 0, 0.06], [1760, 0.06, 0.06], [2093, 0.12, 0.2]], 'square'),
+  alert: () => playMelody([[880, 0, 0.1], [660, 0.13, 0.1], [880, 0.26, 0.12]], 'square'),
 };
 
 const NOTE_OFFSETS = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };

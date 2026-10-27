@@ -8,7 +8,8 @@ export function createGameLoop({ update, render, onAutoPause }) {
 
   function frame(time) {
     if (!running) return;
-    const delta = Math.min((time - lastTime) / 1000, MAX_DELTA_SECONDS);
+    // El primer cuadro puede traer una marca de tiempo anterior a start(): nunca un delta negativo.
+    const delta = Math.max(0, Math.min((time - lastTime) / 1000, MAX_DELTA_SECONDS));
     lastTime = time;
     update(delta);
     render();
