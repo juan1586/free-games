@@ -6,7 +6,9 @@ import { getActivePlayer, getGameData, updateGameData } from '../../core/player.
 import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
-import { getSession, leaveRoom, onDisconnect, onMessage, send } from '../../core/race.js';
+import { getSession, leaveRoom } from '../../core/race.js';
+import { RaceMatch } from '../../core/raceMatch.js';
+import { formatRaceTime, placeLabel, showRaceEnded, showRacePodium } from '../../ui/raceResults.js';
 import {
   CEILING_Y,
   PLAYER_SIZE,
@@ -24,7 +26,7 @@ import { GEO_LEVELS } from './levels.js';
 import { PORTAL_STYLES, drawFinish, drawObjects } from './obstacles.js';
 import { RAINBOW, drawPlayer, resolveSkin } from './shapes.js';
 import { findNewAchievements } from './achievements.js';
-import { parseRaceMessage } from './race.js';
+import { parseGeoPos } from './race.js';
 
 /** El alto lógico es fijo; el ancho se adapta a la pantalla (más ancho en celular horizontal). */
 const MIN_VIEW_WIDTH = 800;
@@ -53,9 +55,6 @@ const TURBO_LINE_SPEED = 1400;
 const COUNTDOWN_SECONDS = 3;
 const GO_LABEL_SECONDS = 0.7;
 const POS_SEND_SECONDS = 1 / 15;
-// Tras la primera llegada a la meta se espera un poco por si la otra llegó antes en su reloj.
-const RESULT_GRACE_MS = 1200;
-const LOSER_PODIUM_DELAY_MS = 1600;
 const RIVAL_FOLLOW_RATE = 12;
 const RIVAL_PREDICT_SECONDS = 0.15;
 const RIVAL_SNAP_DISTANCE = 300;
@@ -68,14 +67,12 @@ const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const wrap = (value, span) => ((value % span) + span) % span;
 
-const formatRaceTime = (ms) => (ms === undefined ? '—' : `${(ms / 1000).toFixed(1)} s`);
-
 const createLevelProgress = () => ({ best: 0, attempts: 0, completed: false, practiceCompleted: false, coins: [false, false, false] });
 
 export class GeoGame {
   constructor(root, { levelIndex, practice, race = false }) {
     const data = getGameData('geo');
-    // En carrera manda la sala: la invitada puede correr un nivel que aún no tiene (no lo desbloquea).
+    // En carrera manda la sala: se puede correr un nivel que aún no se tiene (no lo desbloquea).
     this.race = race ? getSession() : null;
     const raceConfig = this.race?.meta.config;
     this.levelIndex = this.race ? raceConfig.levelIndex : clamp(levelIndex, 0, Math.min(data.unlockedLevel, GEO_LEVELS.length - 1));
@@ -85,7 +82,10 @@ export class GeoGame {
     this.practice = practice && !this.race;
     this.useCheckpoints = this.practice || Boolean(this.race);
     this.recordsProgress = !this.useCheckpoints;
-    if (this.race) this.rival = this.createRival(this.race.meta.rival);
+    if (this.race) {
+      this.match = new RaceMatch({ parsePos: parseGeoPos });
+      this.match.rivals.forEach((rival) => (rival.skin = resolveSkin(rival.look.skin)));
+    }
     this.skin = resolveSkin(data.skin);
     this.speed = getSpeed(this.race ? raceConfig.speedId : data.speed);
     this.level = loadLevel(this.definition, this.world.speed * this.speed.factor);
@@ -134,7 +134,7 @@ export class GeoGame {
     const items = this.race
       ? [
           { key: 'progress', label: 'Tú', icon: getActivePlayer()?.avatar ?? '📊', value: '0%' },
-          { key: 'rival', label: this.rival.name, icon: this.rival.avatar, value: '0%' },
+          { key: 'place', label: 'Puesto', icon: '🏅', value: '—' },
           { key: 'time', label: 'Tiempo', icon: '⏱️', value: '0 s' },
         ]
       : [
@@ -326,8 +326,6 @@ export class GeoGame {
     this.held = false;
     this.loop.start();
     if (this.status === 'running') this.music.start();
-    // Si la rival avisó de que estaba lista mientras estábamos en pausa, se le vuelve a preguntar.
-    if (this.race && this.status === 'waiting') send({ type: 'ready' });
   }
 
   restart() {
@@ -559,90 +557,54 @@ export class GeoGame {
 
   // ---------- Carrera con amigos ----------
 
-  get isHost() {
-    return this.race.role === 'host';
-  }
-
-  get myRole() {
-    return this.race.role;
-  }
-
-  get rivalRole() {
-    return this.isHost ? 'guest' : 'host';
-  }
-
-  createRival({ name, avatar, skin }) {
-    return { name, avatar, skin: resolveSkin(skin), target: null, shown: null, receivedAt: 0, live: false, gone: false };
-  }
-
   startRaceSession() {
-    this.raceUnsubscribers = [onMessage((raw) => this.handleRaceMessage(raw)), onDisconnect(() => this.handleRivalLeft())];
+    this.match
+      .on('countdown', () => this.startCountdown())
+      .on('finish', () => this.refreshPodium())
+      .on('result', () => this.handleResult())
+      .on('rematch', () => this.resetRace())
+      .on('left', (rival) => this.handleRivalLeft(rival))
+      .on('closed', () => this.handleRoomClosed());
     this.resetRace();
   }
 
-  /** Deja todo listo en la salida y avisa a la rival; la anfitriona da la señal cuando ambas partes están listas. */
+  get rivalList() {
+    return [...this.match.rivals.values()];
+  }
+
+  /** Deja todo listo en la salida y avisa a los demás; la anfitriona da la señal cuando todos están listos. */
   resetRace() {
+    clearTimeout(this.podiumRefreshTimer);
     clearTimeout(this.timer);
-    clearTimeout(this.resultTimer);
     clearTimeout(this.podiumTimer);
-    this.resultTimer = null;
     closeModal();
-    this.finishes = {};
-    this.result = null;
+    this.podiumOpen = false;
     this.raceStartedAt = null;
     this.raceAchievements = [];
     this.posTimer = 0;
     this.goLabelTime = 0;
     this.attempts = 0;
-    Object.assign(this.rival, { target: null, shown: null, live: false });
+    this.rivalList.forEach((rival) => (rival.shown = null));
+    this.match.reset();
     this.newAttempt();
     this.status = 'waiting';
     this.music.stop();
-    this.hintTitle.textContent = `Esperando a ${this.rival.name}…`;
+    const rivals = this.match.activeRivals;
+    this.hintTitle.textContent = rivals.length === 1 ? `Esperando a ${rivals[0].name}…` : 'Esperando a los demás…';
     this.hintText.textContent = 'La carrera empieza sola con una cuenta atrás 3, 2, 1.';
     this.hint.hidden = false;
     this.loop.start();
-    send({ type: 'ready' });
-  }
-
-  handleRaceMessage(raw) {
-    const message = parseRaceMessage(raw);
-    if (!message) return;
-    switch (message.type) {
-      case 'pos':
-        Object.assign(this.rival, { target: message, receivedAt: performance.now(), live: true });
-        break;
-      case 'ready':
-        if (this.status !== 'waiting') return;
-        if (this.isHost) {
-          send({ type: 'go' });
-          this.startCountdown();
-        } else {
-          send({ type: 'ready' });
-        }
-        break;
-      case 'go':
-        if (!this.isHost && this.status === 'waiting') this.startCountdown();
-        break;
-      case 'finish':
-        this.finishes[this.rivalRole] = message.ms;
-        if (this.isHost) this.considerResult();
-        break;
-      case 'result':
-        if (!this.isHost) this.applyResult(message.winner);
-        break;
-      case 'rematch':
-        this.resetRace();
-        break;
-      default:
-        break;
-    }
   }
 
   startCountdown() {
-    this.status = 'countdown';
     this.countdown = COUNTDOWN_SECONDS;
     this.hint.hidden = true;
+    // Si justo estaba en pausa, la cuenta atrás espera a que vuelva.
+    if (this.status === 'paused') {
+      this.pausedFrom = 'countdown';
+      return;
+    }
+    this.status = 'countdown';
     sounds.click();
   }
 
@@ -653,7 +615,7 @@ export class GeoGame {
       if (Math.ceil(this.countdown) !== before) sounds.click();
       return;
     }
-    // El tiempo de cada una se mide desde su propia salida: la demora de internet no cuenta.
+    // El tiempo de cada uno se mide desde su propia salida: la demora de internet no cuenta.
     this.status = 'running';
     this.raceStartedAt = performance.now();
     this.goLabelTime = GO_LABEL_SECONDS;
@@ -663,82 +625,55 @@ export class GeoGame {
 
   updateRace(delta) {
     if (this.goLabelTime > 0) this.goLabelTime -= delta;
-    this.updateRival(delta);
+    this.rivalList.forEach((rival) => this.updateRival(rival, delta));
     if (!['running', 'dying', 'won'].includes(this.status)) return;
     this.posTimer -= delta;
     if (this.posTimer > 0) return;
     this.posTimer = POS_SEND_SECONDS;
     const { x, y, mode, gravityDir } = this.state;
-    send({ type: 'pos', x, y, mode, gravityDir, angle: this.angle, tilt: this.tilt, dead: this.status === 'dying' });
+    this.match.sendPos({ x, y, mode, gravityDir, angle: this.angle, tilt: this.tilt, dead: this.status === 'dying' });
   }
 
-  /** La rival llega unas 15 veces por segundo: se suaviza y se adelanta un poco para que no dé tirones. */
-  updateRival(delta) {
-    const rival = this.rival;
-    const target = rival.target;
-    if (!target) return;
+  /** Cada rival llega unas 15 veces por segundo: se suaviza y se adelanta un poco para que no dé tirones. */
+  updateRival(rival, delta) {
+    const pos = rival.pos;
+    if (!pos) return;
     const sinceUpdate = (performance.now() - rival.receivedAt) / 1000;
-    const ahead = rival.live && !target.dead ? Math.min(sinceUpdate, RIVAL_PREDICT_SECONDS) * this.level.speed : 0;
-    const goalX = target.x + ahead;
+    const ahead = pos.dead ? 0 : Math.min(sinceUpdate, RIVAL_PREDICT_SECONDS) * this.level.speed;
+    const goalX = pos.x + ahead;
     if (!rival.shown || Math.abs(goalX - rival.shown.x) > RIVAL_SNAP_DISTANCE) {
-      rival.shown = { x: goalX, y: target.y };
+      rival.shown = { x: goalX, y: pos.y };
       return;
     }
     const follow = Math.min(1, delta * RIVAL_FOLLOW_RATE);
     rival.shown.x += (goalX - rival.shown.x) * follow;
-    rival.shown.y += (target.y - rival.shown.y) * follow;
+    rival.shown.y += (pos.y - rival.shown.y) * follow;
   }
 
-  rivalProgress() {
-    return this.rival.shown ? clamp(this.rival.shown.x / this.level.endX, 0, 1) : 0;
+  rivalProgress(rival) {
+    if (this.match.hasFinished(rival.id)) return 1;
+    return rival.shown ? clamp(rival.shown.x / this.level.endX, 0, 1) : 0;
   }
 
   finishRace() {
-    const ms = performance.now() - this.raceStartedAt;
-    this.finishes[this.myRole] = ms;
+    this.match.finish(performance.now() - this.raceStartedAt);
     this.wonAt = performance.now();
     this.updateHud();
-    if (this.rival.gone) {
+    if (!this.match.activeRivals.length) {
       this.timer = setTimeout(() => this.showRaceAlone(), WIN_MODAL_DELAY_MS);
       return;
     }
-    send({ type: 'finish', ms });
-    if (this.result) {
+    if (this.match.result) {
       this.podiumTimer = setTimeout(() => this.showPodium(), WIN_MODAL_DELAY_MS);
       return;
     }
-    this.showBanner(`🏁 ¡Meta! Esperando a ${this.rival.name}…`, 1500);
-    if (this.isHost) this.considerResult();
+    this.showBanner('🏁 ¡Meta! Esperando a los demás…', 1500);
   }
 
-  /** Solo la anfitriona decide quién ganó, para que las dos vean lo mismo. */
-  considerResult() {
-    if (this.result) return;
-    if (this.finishes.host !== undefined && this.finishes.guest !== undefined) {
-      this.decideResult();
-      return;
-    }
-    this.resultTimer ??= setTimeout(() => this.decideResult(), RESULT_GRACE_MS);
-  }
-
-  decideResult() {
-    clearTimeout(this.resultTimer);
-    this.resultTimer = null;
-    if (this.result || this.rival.gone) return;
-    const { host, guest } = this.finishes;
-    let winner = 'tie';
-    if (guest === undefined || host < guest) winner = 'host';
-    else if (host === undefined || guest < host) winner = 'guest';
-    send({ type: 'result', winner });
-    this.applyResult(winner);
-  }
-
-  applyResult(winner) {
-    if (this.result) return;
-    this.result = winner;
-    const iWon = winner === 'tie' || winner === this.myRole;
+  /** Todos ganan: la carrera cuenta para todos y la copa es para quien llegó primero. */
+  handleResult() {
+    const iWon = this.match.didWin();
     const data = getGameData('geo');
-    // Todas ganan: la carrera cuenta para las dos y la copa es para la ganadora.
     updateGameData('geo', { racesPlayed: data.racesPlayed + 1, raceWins: data.raceWins + (iWon ? 1 : 0) });
     this.raceAchievements = findNewAchievements(getGameData('geo'));
     this.saveAchievements(this.raceAchievements);
@@ -747,100 +682,85 @@ export class GeoGame {
       this.podiumTimer = setTimeout(() => this.showPodium(), wait);
       return;
     }
-    this.showBanner(`🏆 ¡${this.rival.name} llegó primero!`, LOSER_PODIUM_DELAY_MS);
-    this.podiumTimer = setTimeout(() => this.showPodium(), LOSER_PODIUM_DELAY_MS);
+    const winner = this.match.playerName(this.match.result[0]);
+    this.showBanner(`🏆 ¡${winner} llegó primero! ¡Sigue hasta la meta!`, 2400);
   }
 
   showPodium() {
-    // Si justo está explotando, se espera a que reaparezca.
-    if (this.status === 'dying') {
-      this.podiumTimer = setTimeout(() => this.showPodium(), RESPAWN_DELAY_MS);
-      return;
-    }
-    const finished = this.status === 'won';
-    if (!finished && this.status !== 'paused') {
-      this.pausedFrom = this.status;
-      this.status = 'paused';
-    }
     this.loop.stop();
     this.music.stop();
-    const tie = this.result === 'tie';
-    const iWon = tie || this.result === this.myRole;
-    const me = getActivePlayer();
-    let emoji = '🥈';
-    let title = `¡${this.rival.name} ganó!`;
-    if (tie) [emoji, title] = ['🤝', '¡Empate!'];
-    else if (iWon) [emoji, title] = ['🏆', '¡Ganaste la carrera!'];
-    const cheer = iWon ? '¡Ganaste una copa! 🏆' : '¡Qué buena carrera! La próxima puede ser tuya.';
-    showModal({
-      emoji,
-      title,
-      message: [cheer, this.achievementLines(this.raceAchievements)].filter(Boolean).join(' '),
-      tone: iWon ? 'success' : 'neutral',
-      stats: [
-        { label: `${me?.avatar ?? ''} Tú`, value: formatRaceTime(this.finishes[this.myRole]) },
-        { label: `${this.rival.avatar} ${this.rival.name}`, value: formatRaceTime(this.finishes[this.rivalRole]) },
-        { label: '🏆 Copas', value: getGameData('geo').raceWins },
-      ],
-      actions: [
-        this.rival.gone ? null : { label: '¡Revancha! 🔁', variant: 'primary', onClick: () => this.requestRematch() },
-        finished ? null : { label: 'Seguir hasta la meta', onClick: () => this.resume() },
-        { label: 'Salir', onClick: () => navigate('/geo') },
-      ].filter(Boolean),
+    this.podiumOpen = true;
+    clearTimeout(this.podiumRefreshTimer);
+    const rematchIn = showRacePodium({
+      match: this.match,
+      extraMessage: this.achievementLines(this.raceAchievements),
+      trophies: getGameData('geo').raceWins,
+      onRematch: () => this.requestRematch(),
+      exitPath: '/geo',
     });
+    // Si aún hay alguien corriendo, el podio se actualiza solo cuando ya se pueda pedir la revancha.
+    if (Number.isFinite(rematchIn) && rematchIn > 0) this.podiumRefreshTimer = setTimeout(() => this.refreshPodium(), rematchIn + 50);
+  }
+
+  /** Si el podio está abierto y llega alguien más, se actualiza la tabla. */
+  refreshPodium() {
+    if (this.podiumOpen && this.status === 'won') this.showPodium();
   }
 
   requestRematch() {
-    if (this.rival.gone) {
-      this.showRivalGone();
+    if (!this.match.activeRivals.length) {
+      this.showRaceAlone();
       return;
     }
-    send({ type: 'rematch' });
+    this.match.requestRematch();
     this.resetRace();
   }
 
-  handleRivalLeft() {
-    this.rival.gone = true;
-    clearTimeout(this.resultTimer);
-    this.resultTimer = null;
-    this.showBanner(`👋 ${this.rival.name} se fue`, 2200);
-    if (!this.raceStartedAt) {
-      this.showRivalGone();
+  handleRivalLeft(rival) {
+    this.showBanner(`👋 ${rival.name} se fue`, 2200);
+    if (this.match.activeRivals.length) {
+      if (this.podiumOpen) this.showPodium();
       return;
     }
-    if (this.status === 'won' && !this.result) {
-      clearTimeout(this.timer);
-      this.showRaceAlone();
-    }
+    this.handleEveryoneLeft();
   }
 
-  showRivalGone() {
-    this.status = 'paused';
-    this.loop.stop();
-    this.music.stop();
-    showModal({
-      emoji: '👋',
-      title: `${this.rival.name} se fue`,
-      message: 'Se cortó la conexión. Pueden crear otra sala cuando quieran.',
-      actions: [
-        { label: 'Nueva carrera 🏁', variant: 'primary', onClick: () => navigate(`/geo/carrera?nivel=${this.levelIndex}`) },
-        { label: 'Salir', onClick: () => navigate('/geo') },
-      ],
-    });
+  handleRoomClosed() {
+    this.showBanner('👋 La sala se cerró', 2200);
+    this.handleEveryoneLeft();
+  }
+
+  /** Si se fueron todos: antes de salir se avisa; en plena carrera se puede seguir hasta la meta. */
+  handleEveryoneLeft() {
+    if (!this.raceStartedAt) {
+      this.status = 'paused';
+      this.loop.stop();
+      this.music.stop();
+      showRaceEnded({
+        title: 'Se fueron todos',
+        message: 'Se cortó la conexión. Pueden crear otra sala cuando quieran.',
+        newRacePath: `/geo/carrera?nivel=${this.levelIndex}`,
+        exitPath: '/geo',
+      });
+      return;
+    }
+    if (this.status === 'won' && !this.match.result) {
+      clearTimeout(this.timer);
+      this.showRaceAlone();
+    } else if (this.podiumOpen) {
+      this.showPodium();
+    }
   }
 
   showRaceAlone() {
     this.loop.stop();
-    showModal({
-      emoji: '🏁',
-      title: '¡Llegaste a la meta!',
-      message: `${this.rival.name} se desconectó, así que esta vez no hay copa.`,
-      tone: 'success',
-      stats: [{ label: 'Tiempo', value: formatRaceTime(this.finishes[this.myRole]) }],
-      actions: [
-        { label: 'Nueva carrera 🏁', variant: 'primary', onClick: () => navigate(`/geo/carrera?nivel=${this.levelIndex}`) },
-        { label: 'Salir', onClick: () => navigate('/geo') },
-      ],
+    this.music.stop();
+    showRaceEnded({
+      title: this.status === 'won' ? '¡Llegaste a la meta!' : 'Se fueron todos',
+      message: 'Ya no queda nadie en la sala, así que esta vez no hay copa.',
+      stats: this.match.hasFinished() ? [{ label: 'Tiempo', value: formatRaceTime(this.match.finishes.get(this.match.myId)) }] : [],
+      newRacePath: `/geo/carrera?nivel=${this.levelIndex}`,
+      exitPath: '/geo',
     });
   }
 
@@ -885,9 +805,12 @@ export class GeoGame {
   updateHud() {
     const percent = Math.floor(progressOf(this.state, this.level) * 100);
     if (this.race) {
-      const myTime = this.finishes?.[this.myRole] ?? (this.raceStartedAt ? performance.now() - this.raceStartedAt : 0);
+      const finishMs = this.match.finishes.get(this.match.myId);
+      const myTime = finishMs ?? (this.raceStartedAt ? performance.now() - this.raceStartedAt : 0);
+      // El puesto usa la última posición recibida (sin adelantar), para no dar ventaja por la predicción.
+      const place = this.match.placeOf(progressOf(this.state, this.level), (rival) => (rival.pos ? rival.pos.x / this.level.endX : 0));
       this.header.set('progress', `${percent}%`);
-      this.header.set('rival', `${Math.floor(this.rivalProgress() * 100)}%`);
+      this.header.set('place', this.raceStartedAt ? placeLabel(place) : '—');
       this.header.set('time', `${Math.floor(myTime / 1000)} s`);
       return;
     }
@@ -1076,7 +999,7 @@ export class GeoGame {
     drawFinish(ctx, this.level.endX, view, VIEW_HEIGHT);
     this.drawCheckpoints(view);
     this.drawAttemptLabel(view);
-    this.drawRival(view);
+    if (this.race) this.rivalList.forEach((rival, index) => this.drawRival(rival, index, view));
     this.drawRainbowTrail(view);
     if (this.status !== 'dying') this.drawPlayer(view);
     this.drawParticles(view);
@@ -1271,11 +1194,9 @@ export class GeoGame {
     });
   }
 
-  /** La rival se ve como un fantasma semitransparente; si va fuera de la pantalla, una flecha en el borde. */
-  drawRival(view) {
-    if (!this.race) return;
-    const rival = this.rival;
-    if (!rival.shown || rival.gone || rival.target?.dead) return;
+  /** Cada rival se ve como un fantasma semitransparente; si va fuera de la pantalla, una flecha en el borde. */
+  drawRival(rival, index, view) {
+    if (!rival.shown || rival.gone || rival.pos?.dead) return;
     const ctx = this.ctx;
     const x = rival.shown.x + PLAYER_SIZE / 2 - view.x;
     const y = view.floor - (rival.shown.y + PLAYER_SIZE / 2 - view.y);
@@ -1284,7 +1205,8 @@ export class GeoGame {
     if (x < -PLAYER_SIZE || x > this.viewWidth + PLAYER_SIZE) {
       const isAhead = x > 0;
       const edgeX = isAhead ? this.viewWidth - 44 : 44;
-      const edgeY = clamp(y, 60, FLOOR_Y - 20);
+      // Si hay varios fuera de la pantalla, se apilan para que no se tapen.
+      const edgeY = clamp(y, 60, FLOOR_Y - 20) + index * 36 * (y > VIEW_HEIGHT / 2 ? -1 : 1);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
       ctx.beginPath();
       ctx.roundRect(edgeX - 36, edgeY - 16, 72, 32, 16);
@@ -1294,7 +1216,7 @@ export class GeoGame {
       ctx.fillText(isAhead ? `${rival.avatar} ▶` : `◀ ${rival.avatar}`, edgeX, edgeY + 1);
       return;
     }
-    const target = rival.target ?? { mode: 'cube', angle: 0, tilt: 0, gravityDir: 1 };
+    const target = rival.pos ?? { mode: 'cube', angle: 0, tilt: 0, gravityDir: 1 };
     ctx.save();
     ctx.globalAlpha = RIVAL_ALPHA;
     drawPlayer(ctx, rival.skin, {
@@ -1442,7 +1364,9 @@ export class GeoGame {
     ctx.fillStyle = this.palette.text;
     ctx.fillText(`${Math.floor(progress * 100)}%`, trackX + trackWidth + 10, trackY + 7);
     if (this.race) {
-      this.drawTrackMarker(trackX + trackWidth * this.rivalProgress(), trackY + 6, this.rival.avatar, this.rival.skin.color.primary);
+      this.rivalList
+        .filter((rival) => !rival.gone)
+        .forEach((rival) => this.drawTrackMarker(trackX + trackWidth * this.rivalProgress(rival), trackY + 6, rival.avatar, rival.skin.color.primary));
       this.drawTrackMarker(trackX + trackWidth * progress, trackY + 6, getActivePlayer()?.avatar ?? '⭐', this.skin.color.primary);
     }
   }
@@ -1465,9 +1389,9 @@ export class GeoGame {
   destroy() {
     clearTimeout(this.timer);
     if (this.race) {
-      clearTimeout(this.resultTimer);
       clearTimeout(this.podiumTimer);
-      this.raceUnsubscribers.forEach((unsubscribe) => unsubscribe());
+      clearTimeout(this.podiumRefreshTimer);
+      this.match.destroy();
       leaveRoom();
     }
     this.music.stop();

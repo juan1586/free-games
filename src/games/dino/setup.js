@@ -77,11 +77,20 @@ export function mountDinoSetup(root) {
     });
   }
 
-  function startGame(event) {
-    event.preventDefault();
+  function saveChoice() {
     updateGameData('dino', { dinoType: selectedDino.id, dinoName: sanitizeName(nameInput.value) });
     sounds.coin();
+  }
+
+  function startGame(event) {
+    event.preventDefault();
+    saveChoice();
     navigate(`/dino/jugar?mundo=${selectedWorld}`);
+  }
+
+  function startRace() {
+    saveChoice();
+    navigate(`/dino/carrera?mundo=${selectedWorld}`);
   }
 
   function animatePreviews(time) {
@@ -104,6 +113,7 @@ export function mountDinoSetup(root) {
         on: { click: () => navigate('/') },
       }),
       el('h1', { className: 'setup__title', text: '🦖 Dino Corre' }),
+      el('span', { className: 'star-pill', text: `🏆 ${data.raceWins}`, attrs: { title: 'Copas ganadas en carreras' } }),
     ]),
     el('section', { className: 'card setup__section' }, [
       el('h2', { className: 'setup__subtitle', text: '1. Elige tu dinosaurio' }),
@@ -118,7 +128,10 @@ export function mountDinoSetup(root) {
       el('div', { className: 'world-grid' }, worldButtons),
       el('p', { className: 'setup__note', text: 'Llega a la meta de un mundo para desbloquear el siguiente.' }),
     ]),
-    el('button', { className: 'btn btn--primary btn--xl', text: '¡A correr! 🏃', attrs: { type: 'submit' } }),
+    el('div', { className: 'dino-playbar' }, [
+      el('button', { className: 'btn btn--primary btn--xl', text: '¡A correr! 🏃', attrs: { type: 'submit' } }),
+      el('button', { className: 'btn btn--secondary btn--lg', text: '🏁 Carrera con amigos', attrs: { type: 'button' }, on: { click: startRace } }),
+    ]),
   ]);
 
   root.append(el('main', { className: 'page' }, [form]));

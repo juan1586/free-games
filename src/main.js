@@ -10,6 +10,7 @@ import { mountMenu } from './ui/menu.js';
 import { mountProfile } from './ui/profile.js';
 import { mountDinoSetup } from './games/dino/setup.js';
 import { mountDinoGame } from './games/dino/DinoGame.js';
+import { mountDinoRaceLobby } from './games/dino/raceLobby.js';
 import { mountTetrisSetup } from './games/tetris/setup.js';
 import { mountTetrisGame } from './games/tetris/TetrisGame.js';
 import { mountGeoSetup } from './games/geo/setup.js';
@@ -29,20 +30,30 @@ const parseLevel = (query) => {
   return Number.isFinite(value) && value >= 0 ? value : 0;
 };
 
+/** ¿Hay una carrera lista para jugar? (Al recargar la página se pierde la sala.) */
+const hasRaceReady = () => isConnected() && Boolean(getSession().meta.config) && getSession().meta.players?.length >= 2;
+
 const ROUTES = {
   '/': () => mountMenu(app),
   '/perfil': () => mountProfile(app, { mode: 'create' }),
   '/perfil/editar': () => mountProfile(app, { mode: 'edit' }),
   '/dino': () => mountDinoSetup(app),
-  '/dino/jugar': (query) => mountDinoGame(app, { worldIndex: parseWorld(query) }),
+  '/dino/carrera': (query) => mountDinoRaceLobby(app, { worldIndex: parseWorld(query) }),
+  '/dino/jugar': (query) => {
+    const race = query.get('carrera') === '1';
+    if (race && !hasRaceReady()) {
+      navigate(`/dino/carrera?mundo=${parseWorld(query)}`);
+      return null;
+    }
+    return mountDinoGame(app, { worldIndex: parseWorld(query), race });
+  },
   '/tetris': () => mountTetrisSetup(app),
   '/tetris/jugar': (query) => mountTetrisGame(app, { worldIndex: parseWorld(query) }),
   '/geo': () => mountGeoSetup(app),
   '/geo/carrera': (query) => mountGeoRaceLobby(app, { levelIndex: parseLevel(query) }),
   '/geo/jugar': (query) => {
     const race = query.get('carrera') === '1';
-    // Sin sala abierta (p. ej. al recargar la página) se vuelve a la sala de espera.
-    if (race && !(isConnected() && getSession().meta.config && getSession().meta.rival)) {
+    if (race && !hasRaceReady()) {
       navigate(`/geo/carrera?nivel=${parseLevel(query)}`);
       return null;
     }

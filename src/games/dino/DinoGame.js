@@ -2,12 +2,17 @@ import { createGameLoop } from '../../core/gameLoop.js';
 import { setupCanvas } from '../../core/canvas.js';
 import { bindHoldButton, bindKeyboard, bindTouchGestures } from '../../core/input.js';
 import { sounds } from '../../core/audio.js';
-import { getGameData, sanitizeName, updateGameData } from '../../core/player.js';
+import { getActivePlayer, getGameData, sanitizeName, updateGameData } from '../../core/player.js';
 import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
+import { getSession, leaveRoom } from '../../core/race.js';
+import { RaceMatch } from '../../core/raceMatch.js';
+import { createRandom } from '../../core/random.js';
+import { formatRaceTime, placeLabel, showRaceEnded, showRacePodium } from '../../ui/raceResults.js';
 import { DINO_SIZE, drawDino, getDino } from './dinos.js';
 import { DINO_WORLDS, OBSTACLE_SIZES, drawObstacle } from './worlds.js';
+import { parseDinoPos } from './race.js';
 
 const VIEW_WIDTH = 800;
 const VIEW_HEIGHT = 300;
@@ -30,6 +35,17 @@ const COIN_ROW_CHANCE = 0.45;
 const TURBO_BOOST = 0.5;
 const TURBO_EASE = 8;
 const SPEED_LINE_COUNT = 12;
+// Carrera: al chocar no se pierde, se tropieza (va más lento un momento y no choca otra vez).
+const STUMBLE_SECONDS = 1.1;
+const STUMBLE_MIN_SPEED = 0.25;
+const COUNTDOWN_SECONDS = 3;
+const GO_LABEL_SECONDS = 0.7;
+const POS_SEND_SECONDS = 1 / 15;
+const FINISH_MODAL_DELAY_MS = 1300;
+const RIVAL_FOLLOW_RATE = 12;
+const RIVAL_PREDICT_SECONDS = 0.15;
+const RIVAL_SNAP_DISTANCE = 400;
+const RIVAL_ALPHA = 0.5;
 
 const HIGH_FLYER_BOTTOM = GROUND_Y - 44;
 const LOW_FLYER_BOTTOM = GROUND_Y - 6;
@@ -43,13 +59,24 @@ function rectsOverlap(a, b) {
 }
 
 export class DinoGame {
-  constructor(root, { worldIndex }) {
+  constructor(root, { worldIndex, race = false }) {
     const data = getGameData('dino');
-    this.worldIndex = clamp(worldIndex, 0, data.unlockedWorld);
+    // En carrera manda la sala: se puede correr un mundo que aún no se tiene (no lo desbloquea).
+    this.race = race ? getSession() : null;
+    this.worldIndex = this.race ? this.race.meta.config.worldIndex : clamp(worldIndex, 0, data.unlockedWorld);
     this.world = DINO_WORLDS[this.worldIndex];
     this.dino = getDino(data.dinoType);
     this.dinoName = sanitizeName(data.dinoName) || this.dino.name;
     this.best = data.bestScore;
+    // Obstáculos y monedas salen de aquí; en carrera, de una semilla compartida (misma pista para todos).
+    this.courseRandom = Math.random;
+    if (this.race) {
+      this.match = new RaceMatch({ parsePos: parseDinoPos });
+      this.match.rivals.forEach((rival) => {
+        rival.dino = getDino(rival.look.dinoType);
+        rival.label = rival.look.dinoName || rival.dino.name;
+      });
+    }
 
     this.buildDom(root);
     this.ctx = setupCanvas(this.canvas, VIEW_WIDTH, VIEW_HEIGHT);
@@ -65,29 +92,37 @@ export class DinoGame {
     this.unbinders = this.bindControls();
     this.reset();
     this.loop.start();
+    if (this.race) this.startRaceSession();
   }
 
   buildDom(root) {
+    const items = this.race
+      ? [
+          { key: 'distance', label: 'Metros', icon: getActivePlayer()?.avatar ?? '📏', value: `0/${this.world.goal}` },
+          { key: 'place', label: 'Puesto', icon: '🏅', value: '—' },
+          { key: 'coins', label: 'Monedas', icon: '🪙', value: 0 },
+          { key: 'time', label: 'Tiempo', icon: '⏱️', value: '0 s' },
+        ]
+      : [
+          { key: 'distance', label: 'Metros', icon: '📏', value: 0 },
+          { key: 'coins', label: 'Monedas', icon: '🪙', value: 0 },
+          { key: 'score', label: 'Puntos', icon: '⭐', value: 0 },
+          { key: 'best', label: 'Récord', icon: '🏆', value: this.best },
+        ];
     this.header = createGameHeader({
-      title: `${this.world.emoji} ${this.world.name}`,
+      title: `${this.race ? '🏁 ' : ''}${this.world.emoji} ${this.world.name}`,
       backPath: '/dino',
       onPause: () => this.pause(),
-      items: [
-        { key: 'distance', label: 'Metros', icon: '📏', value: 0 },
-        { key: 'coins', label: 'Monedas', icon: '🪙', value: 0 },
-        { key: 'score', label: 'Puntos', icon: '⭐', value: 0 },
-        { key: 'best', label: 'Récord', icon: '🏆', value: this.best },
-      ],
+      items,
     });
 
     this.canvas = el('canvas', {
       className: 'stage__canvas stage__canvas--dino',
       attrs: { width: VIEW_WIDTH, height: VIEW_HEIGHT, 'aria-label': 'Juego del dinosaurio' },
     });
-    this.hint = el('div', { className: 'stage__hint' }, [
-      el('strong', { text: '¡Toca o pulsa Espacio para empezar!' }),
-      el('span', { text: '⬆️ / Espacio: saltar · ⬇️: agacharse · Shift / ⚡: turbo (¡puntos dobles!) · P: pausa' }),
-    ]);
+    this.hintTitle = el('strong', { text: '¡Toca o pulsa Espacio para empezar!' });
+    this.hintText = el('span', { text: '⬆️ / Espacio: saltar · ⬇️: agacharse · Shift / ⚡: turbo (¡puntos dobles!) · P: pausa' });
+    this.hint = el('div', { className: 'stage__hint' }, [this.hintTitle, this.hintText]);
     const stage = el('div', { className: `stage stage--dino world--${this.world.id}` }, [this.canvas, this.hint]);
     this.showBanner = createBanner(stage);
 
@@ -152,6 +187,7 @@ export class DinoGame {
     this.worldCleared = false;
     this.shakeTime = 0;
     this.progressSaved = false;
+    this.stumbleTime = 0;
     this.hint.hidden = false;
     this.updateHud();
   }
@@ -161,7 +197,23 @@ export class DinoGame {
   }
 
   get effectiveSpeed() {
-    return this.speed * (1 + TURBO_BOOST * this.turboAmount);
+    const stumble = this.stumbleTime > 0 ? STUMBLE_MIN_SPEED + (1 - STUMBLE_MIN_SPEED) * (1 - this.stumbleTime / STUMBLE_SECONDS) : 1;
+    return this.speed * (1 + TURBO_BOOST * this.turboAmount) * stumble;
+  }
+
+  /** Velocidad base a una distancia dada (sin turbo): sube poco a poco hasta el máximo del mundo. */
+  speedAt(distancePx) {
+    const { start, max } = this.world.speed;
+    const acceleration = (max - start) / (this.world.goal * 1.4);
+    return Math.min(max, start + Math.floor(distancePx * METERS_PER_PIXEL) * acceleration);
+  }
+
+  courseRange(min, max) {
+    return min + this.courseRandom() * (max - min);
+  }
+
+  coursePick(list) {
+    return list[Math.floor(this.courseRandom() * list.length)];
   }
 
   setTurbo(isOn) {
@@ -183,11 +235,24 @@ export class DinoGame {
   }
 
   pause() {
-    if (this.status !== 'running' && this.status !== 'ready') return;
+    if (!['running', 'ready', 'waiting', 'countdown'].includes(this.status)) return;
     this.pausedFrom = this.status;
     this.status = 'paused';
     this.turboHeld = false;
     this.loop.stop();
+    if (this.race) {
+      showModal({
+        emoji: '⏸️',
+        title: 'Pausa',
+        message: this.raceStartedAt ? '¡Ojo! En la carrera el reloj sigue corriendo.' : 'La carrera empieza cuando vuelvas.',
+        escapeIndex: 0,
+        actions: [
+          { label: 'Continuar ▶', variant: 'primary', onClick: () => this.resume() },
+          { label: 'Salir', onClick: () => navigate('/dino') },
+        ],
+      });
+      return;
+    }
     showModal({
       emoji: '⏸️',
       title: 'Pausa',
@@ -218,11 +283,12 @@ export class DinoGame {
     this.time += delta;
     this.updateParticles(delta);
     if (this.shakeTime > 0) this.shakeTime -= delta;
+    if (this.status === 'countdown') this.updateCountdown(delta);
+    if (this.race) this.updateRace(delta);
     if (this.status !== 'running') return;
 
-    const { start, max } = this.world.speed;
-    const acceleration = (max - start) / (this.world.goal * 1.4);
-    this.speed = Math.min(max, start + this.meters * acceleration);
+    this.speed = this.speedAt(this.distancePx);
+    if (this.stumbleTime > 0) this.stumbleTime = Math.max(0, this.stumbleTime - delta);
     const turboTarget = this.turboHeld ? 1 : 0;
     this.turboAmount += (turboTarget - this.turboAmount) * Math.min(1, delta * TURBO_EASE);
     const step = this.effectiveSpeed * delta;
@@ -234,7 +300,10 @@ export class DinoGame {
     this.spawnEntities();
     this.collectCoins();
     this.checkGoal();
-    if (this.hitsObstacle()) this.gameOver();
+    if (this.status === 'running' && this.stumbleTime <= 0 && this.hitsObstacle()) {
+      if (this.race) this.stumble();
+      else this.gameOver();
+    }
     this.updateHud();
   }
 
@@ -274,27 +343,33 @@ export class DinoGame {
     this.coins = this.coins.filter((coin) => coin.x > -20 && !coin.collected);
   }
 
+  /**
+   * En carrera la pista no depende de cómo juegue cada uno: los obstáculos van en distancias fijas
+   * (con la velocidad base, sin turbo) y los números salen de la semilla compartida.
+   */
   spawnEntities() {
     if (this.distancePx < this.nextSpawnPx) return;
-    const canFly = this.meters >= this.world.flyersFrom;
-    const isFlyer = canFly && Math.random() < FLYER_CHANCE;
-    const kind = isFlyer ? this.world.flyer : pick(this.world.ground);
+    const spawnAt = this.race ? this.nextSpawnPx : this.distancePx;
+    const canFly = Math.floor(spawnAt * METERS_PER_PIXEL) >= this.world.flyersFrom;
+    const isFlyer = canFly && this.courseRandom() < FLYER_CHANCE;
+    const kind = isFlyer ? this.world.flyer : this.coursePick(this.world.ground);
     const [w, h] = OBSTACLE_SIZES[kind];
-    const bottom = isFlyer ? (Math.random() < 0.5 ? HIGH_FLYER_BOTTOM : LOW_FLYER_BOTTOM) : GROUND_Y;
-    const spawnX = VIEW_WIDTH + 30;
+    const bottom = isFlyer ? (this.courseRandom() < 0.5 ? HIGH_FLYER_BOTTOM : LOW_FLYER_BOTTOM) : GROUND_Y;
+    const spawnX = VIEW_WIDTH + 30 - (this.distancePx - spawnAt);
     this.obstacles.push({ kind, x: spawnX, y: bottom - h, w, h, flyer: isFlyer });
 
     // El hueco se mide en segundos de reacción para que siga siendo justo a cualquier velocidad.
-    const gap = this.effectiveSpeed * random(1.05, 1.9);
-    this.nextSpawnPx = this.distancePx + gap;
+    const gapSpeed = this.race ? this.speedAt(spawnAt) : this.effectiveSpeed;
+    const gap = gapSpeed * this.courseRange(1.05, 1.9);
+    this.nextSpawnPx = spawnAt + gap;
 
-    if (Math.random() < COIN_ROW_CHANCE) this.spawnCoinRow(spawnX + gap / 2);
+    if (this.courseRandom() < COIN_ROW_CHANCE) this.spawnCoinRow(spawnX + gap / 2);
   }
 
   spawnCoinRow(centerX) {
     const count = 3;
-    const isArc = Math.random() < 0.5;
-    const baseHeight = isArc ? 70 : pick([30, 95]);
+    const isArc = this.courseRandom() < 0.5;
+    const baseHeight = isArc ? 70 : this.coursePick([30, 95]);
     for (let index = 0; index < count; index += 1) {
       const offset = index - (count - 1) / 2;
       const arcLift = isArc ? (1 - Math.abs(offset)) * 40 : 0;
@@ -337,6 +412,10 @@ export class DinoGame {
   checkGoal() {
     if (this.worldCleared || this.meters < this.world.goal) return;
     this.worldCleared = true;
+    if (this.race) {
+      this.finishRace();
+      return;
+    }
     const data = getGameData('dino');
     const nextWorld = Math.min(this.worldIndex + 1, DINO_WORLDS.length - 1);
     updateGameData('dino', { unlockedWorld: Math.max(data.unlockedWorld, nextWorld) });
@@ -389,6 +468,11 @@ export class DinoGame {
     if (this.progressSaved) return false;
     this.progressSaved = true;
     const data = getGameData('dino');
+    // En carrera solo se guardan las monedas: ni récord ni mundos.
+    if (this.race) {
+      updateGameData('dino', { coins: data.coins + this.coinsThisRun });
+      return false;
+    }
     const isNewRecord = this.score > data.bestScore;
     this.best = Math.max(data.bestScore, this.score);
     updateGameData('dino', { bestScore: this.best, coins: data.coins + this.coinsThisRun });
@@ -396,10 +480,296 @@ export class DinoGame {
   }
 
   updateHud() {
+    if (this.race) {
+      const finishMs = this.match?.finishes.get(this.match.myId);
+      const myTime = finishMs ?? (this.raceStartedAt ? performance.now() - this.raceStartedAt : 0);
+      // El puesto usa la última posición recibida (sin adelantar), para no dar ventaja por la predicción.
+      const place = this.match?.placeOf(this.distancePx, (rival) => rival.pos?.d ?? 0) ?? 1;
+      this.header.set('distance', `${Math.min(this.meters, this.world.goal)}/${this.world.goal}`);
+      this.header.set('place', this.raceStartedAt ? placeLabel(place) : '—');
+      this.header.set('coins', this.coinsThisRun);
+      this.header.set('time', `${Math.floor(myTime / 1000)} s`);
+      return;
+    }
     this.header.set('distance', this.meters);
     this.header.set('coins', this.coinsThisRun);
     this.header.set('score', this.score);
     this.header.set('best', Math.max(this.best, this.score));
+  }
+
+  // ---------- Carrera con amigos ----------
+
+  startRaceSession() {
+    this.match
+      .on('countdown', (seed) => this.startCountdown(seed))
+      .on('finish', () => this.refreshPodium())
+      .on('result', () => this.handleResult())
+      .on('rematch', () => this.resetRace())
+      .on('left', (rival) => this.handleRivalLeft(rival))
+      .on('closed', () => this.handleRoomClosed());
+    this.resetRace();
+  }
+
+  get rivalList() {
+    return [...this.match.rivals.values()];
+  }
+
+  /** Deja todo listo en la salida y avisa a los demás; la anfitriona da la señal cuando todos están listos. */
+  resetRace() {
+    clearTimeout(this.podiumRefreshTimer);
+    clearTimeout(this.podiumTimer);
+    closeModal();
+    this.saveProgress();
+    this.podiumOpen = false;
+    this.raceStartedAt = null;
+    this.posTimer = 0;
+    this.goLabelTime = 0;
+    this.rivalList.forEach((rival) => (rival.shown = null));
+    this.match.reset();
+    this.reset();
+    this.status = 'waiting';
+    const rivals = this.match.activeRivals;
+    this.hintTitle.textContent = rivals.length === 1 ? `Esperando a ${rivals[0].name}…` : 'Esperando a los demás…';
+    this.hintText.textContent = `Primero en recorrer ${this.world.goal} m gana. Si chocas, solo tropiezas. ¡A correr!`;
+    this.loop.start();
+  }
+
+  startCountdown(seed) {
+    this.courseRandom = createRandom(seed);
+    this.countdown = COUNTDOWN_SECONDS;
+    this.hint.hidden = true;
+    // Si justo estaba en pausa, la cuenta atrás espera a que vuelva.
+    if (this.status === 'paused') {
+      this.pausedFrom = 'countdown';
+      return;
+    }
+    this.status = 'countdown';
+    sounds.click();
+  }
+
+  updateCountdown(delta) {
+    const before = Math.ceil(this.countdown);
+    this.countdown -= delta;
+    if (this.countdown > 0) {
+      if (Math.ceil(this.countdown) !== before) sounds.click();
+      return;
+    }
+    // El tiempo de cada uno se mide desde su propia salida: la demora de internet no cuenta.
+    this.status = 'running';
+    this.raceStartedAt = performance.now();
+    this.goLabelTime = GO_LABEL_SECONDS;
+    sounds.levelUp();
+  }
+
+  updateRace(delta) {
+    if (this.goLabelTime > 0) this.goLabelTime -= delta;
+    this.rivalList.forEach((rival) => this.updateRival(rival, delta));
+    if (this.status !== 'running' && this.status !== 'finished') return;
+    this.posTimer -= delta;
+    if (this.posTimer > 0) return;
+    this.posTimer = POS_SEND_SECONDS;
+    const { height, ducking } = this.player;
+    this.match.sendPos({ d: this.distancePx, h: height, duck: ducking, hurt: this.stumbleTime > 0 });
+  }
+
+  /** Cada rival llega unas 15 veces por segundo: se suaviza y se adelanta un poco para que no dé tirones. */
+  updateRival(rival, delta) {
+    const pos = rival.pos;
+    if (!pos) return;
+    const isMoving = !pos.hurt && !this.match.hasFinished(rival.id);
+    const sinceUpdate = (performance.now() - rival.receivedAt) / 1000;
+    const goalD = pos.d + (isMoving ? Math.min(sinceUpdate, RIVAL_PREDICT_SECONDS) * this.speedAt(pos.d) : 0);
+    if (!rival.shown || Math.abs(goalD - rival.shown.d) > RIVAL_SNAP_DISTANCE) {
+      rival.shown = { d: goalD, h: pos.h };
+      return;
+    }
+    const follow = Math.min(1, delta * RIVAL_FOLLOW_RATE);
+    rival.shown.d += (goalD - rival.shown.d) * follow;
+    rival.shown.h += (pos.h - rival.shown.h) * follow;
+  }
+
+  rivalProgress(rival) {
+    if (this.match.hasFinished(rival.id)) return 1;
+    return rival.shown ? clamp((rival.shown.d * METERS_PER_PIXEL) / this.world.goal, 0, 1) : 0;
+  }
+
+  stumble() {
+    this.stumbleTime = STUMBLE_SECONDS;
+    this.shakeTime = 0.25;
+    sounds.hit();
+    this.spawnSparkles(DINO_X + 30, GROUND_Y - this.player.height - 30, '#ff5f5f', 10);
+  }
+
+  finishRace() {
+    this.status = 'finished';
+    this.turboHeld = false;
+    sounds.win();
+    this.spawnConfetti();
+    this.match.finish(performance.now() - this.raceStartedAt);
+    this.finishedAt = performance.now();
+    this.saveProgress();
+    this.updateHud();
+    if (!this.match.activeRivals.length) {
+      this.podiumTimer = setTimeout(() => this.showRaceAlone(), FINISH_MODAL_DELAY_MS);
+      return;
+    }
+    if (this.match.result) {
+      this.podiumTimer = setTimeout(() => this.showPodium(), FINISH_MODAL_DELAY_MS);
+      return;
+    }
+    this.showBanner('🏁 ¡Meta! Esperando a los demás…', 1500);
+  }
+
+  /** Todos ganan: la carrera cuenta para todos y la copa es para quien llegó primero. */
+  handleResult() {
+    const data = getGameData('dino');
+    updateGameData('dino', { racesPlayed: data.racesPlayed + 1, raceWins: data.raceWins + (this.match.didWin() ? 1 : 0) });
+    if (this.status === 'finished') {
+      const wait = Math.max(0, FINISH_MODAL_DELAY_MS - (performance.now() - this.finishedAt));
+      this.podiumTimer = setTimeout(() => this.showPodium(), wait);
+      return;
+    }
+    const winner = this.match.playerName(this.match.result[0]);
+    this.showBanner(`🏆 ¡${winner} llegó primero! ¡Sigue hasta la meta!`, 2400);
+  }
+
+  showPodium() {
+    this.loop.stop();
+    this.podiumOpen = true;
+    clearTimeout(this.podiumRefreshTimer);
+    const rematchIn = showRacePodium({
+      match: this.match,
+      extraMessage: this.coinsThisRun ? `Te llevas ${this.coinsThisRun} 🪙.` : '',
+      trophies: getGameData('dino').raceWins,
+      onRematch: () => this.requestRematch(),
+      exitPath: '/dino',
+    });
+    // Si aún hay alguien corriendo, el podio se actualiza solo cuando ya se pueda pedir la revancha.
+    if (Number.isFinite(rematchIn) && rematchIn > 0) this.podiumRefreshTimer = setTimeout(() => this.refreshPodium(), rematchIn + 50);
+  }
+
+  /** Si el podio está abierto y llega alguien más, se actualiza la tabla. */
+  refreshPodium() {
+    if (this.podiumOpen && this.status === 'finished') this.showPodium();
+  }
+
+  requestRematch() {
+    if (!this.match.activeRivals.length) {
+      this.showRaceAlone();
+      return;
+    }
+    this.match.requestRematch();
+    this.resetRace();
+  }
+
+  handleRivalLeft(rival) {
+    this.showBanner(`👋 ${rival.name} se fue`, 2200);
+    if (this.match.activeRivals.length) {
+      if (this.podiumOpen) this.showPodium();
+      return;
+    }
+    this.handleEveryoneLeft();
+  }
+
+  handleRoomClosed() {
+    this.showBanner('👋 La sala se cerró', 2200);
+    this.handleEveryoneLeft();
+  }
+
+  /** Si se fueron todos: antes de salir se avisa; en plena carrera se puede seguir hasta la meta. */
+  handleEveryoneLeft() {
+    if (!this.raceStartedAt) {
+      this.status = 'paused';
+      this.loop.stop();
+      showRaceEnded({
+        title: 'Se fueron todos',
+        message: 'Se cortó la conexión. Pueden crear otra sala cuando quieran.',
+        newRacePath: `/dino/carrera?mundo=${this.worldIndex}`,
+        exitPath: '/dino',
+      });
+      return;
+    }
+    if (this.status === 'finished' && !this.match.result) {
+      clearTimeout(this.podiumTimer);
+      this.showRaceAlone();
+    } else if (this.podiumOpen) {
+      this.showPodium();
+    }
+  }
+
+  showRaceAlone() {
+    this.loop.stop();
+    showRaceEnded({
+      title: this.status === 'finished' ? '¡Llegaste a la meta!' : 'Se fueron todos',
+      message: 'Ya no queda nadie en la sala, así que esta vez no hay copa.',
+      stats: this.match.hasFinished()
+        ? [
+            { label: 'Tiempo', value: formatRaceTime(this.match.finishes.get(this.match.myId)) },
+            { label: 'Monedas', value: this.coinsThisRun },
+          ]
+        : [],
+      newRacePath: `/dino/carrera?mundo=${this.worldIndex}`,
+      exitPath: '/dino',
+    });
+  }
+
+  /** Cada rival es un dino fantasma; si va fuera de la pantalla, una flecha en el borde. */
+  drawRival(rival, index) {
+    if (!rival.shown || rival.gone) return;
+    if (rival.pos?.hurt && Math.floor(this.time * 12) % 2 === 0) return;
+    const ctx = this.ctx;
+    const x = DINO_X + (rival.shown.d - this.distancePx);
+    ctx.font = '600 13px Fredoka, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (x < -60 || x > VIEW_WIDTH) {
+      const isAhead = x > 0;
+      const edgeX = isAhead ? VIEW_WIDTH - 40 : 40;
+      const edgeY = 60 + index * 34;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(edgeX - 32, edgeY - 14, 64, 28, 14);
+      ctx.fill();
+      ctx.fillStyle = rival.dino.colors.accent;
+      ctx.fillText(isAhead ? `${rival.avatar} ▶` : `◀ ${rival.avatar}`, edgeX, edgeY + 1);
+      ctx.textBaseline = 'alphabetic';
+      return;
+    }
+    const footY = GROUND_Y - rival.shown.h;
+    const ducking = Boolean(rival.pos?.duck);
+    ctx.save();
+    ctx.globalAlpha = RIVAL_ALPHA;
+    drawDino(ctx, rival.dino, { x, y: footY, frame: this.frame, ducking, onGround: rival.shown.h < 1 });
+    ctx.restore();
+    const labelY = Math.max(NAME_LABEL_MIN_Y, footY - (ducking ? 52 : 86) * rival.dino.physics.scale);
+    const label = `${rival.avatar} ${rival.label}`;
+    const labelWidth = ctx.measureText(label).width + 14;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.beginPath();
+    ctx.roundRect(x + 30 - labelWidth / 2, labelY - 10, labelWidth, 20, 10);
+    ctx.fill();
+    ctx.fillStyle = rival.dino.colors.accent;
+    ctx.fillText(label, x + 30, labelY + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  drawCountdown() {
+    if (!this.race) return;
+    let text = null;
+    if (this.status === 'countdown' || (this.status === 'paused' && this.pausedFrom === 'countdown')) text = String(Math.max(1, Math.ceil(this.countdown)));
+    else if (this.goLabelTime > 0) text = '¡YA!';
+    if (!text) return;
+    const ctx = this.ctx;
+    ctx.font = '700 96px Fredoka, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = 'rgba(43, 33, 64, 0.4)';
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeText(text, VIEW_WIDTH / 2, VIEW_HEIGHT / 2 - 20);
+    ctx.fillText(text, VIEW_WIDTH / 2, VIEW_HEIGHT / 2 - 20);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
   }
 
   // ---------- Partículas ----------
@@ -496,10 +866,12 @@ export class DinoGame {
     this.drawCoins();
     this.obstacles.forEach((obstacle) => drawObstacle(ctx, obstacle.kind, obstacle.x, obstacle.y, palette, this.frame));
     this.drawTurbo();
+    if (this.race) this.rivalList.forEach((rival, index) => this.drawRival(rival, index));
     this.drawPlayer();
     this.drawParticles();
     this.drawWeather();
     this.drawProgress();
+    this.drawCountdown();
 
     ctx.restore();
   }
@@ -647,14 +1019,18 @@ export class DinoGame {
     ctx.ellipse(DINO_X + 28, GROUND_Y + 2, Math.max(8, 24 - height * 0.1), 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    drawDino(ctx, this.dino, {
-      x: DINO_X,
-      y: footY,
-      frame: isRunning ? this.frame : 0,
-      ducking,
-      onGround,
-      hurt: this.status === 'over',
-    });
+    // Al tropezar, el dino parpadea.
+    const isBlinking = this.stumbleTime > 0 && Math.floor(this.time * 12) % 2 === 0;
+    if (!isBlinking) {
+      drawDino(ctx, this.dino, {
+        x: DINO_X,
+        y: footY,
+        frame: isRunning ? this.frame : 0,
+        ducking,
+        onGround,
+        hurt: this.status === 'over' || this.stumbleTime > 0,
+      });
+    }
 
     const labelY = Math.max(NAME_LABEL_MIN_Y, footY - (ducking ? 52 : 86) * this.dino.physics.scale);
     ctx.font = '600 13px Fredoka, system-ui, sans-serif';
@@ -726,7 +1102,7 @@ export class DinoGame {
     const trackX = 20;
     const trackY = 16;
     const trackWidth = VIEW_WIDTH - 40;
-    const progress = clamp(this.meters / this.world.goal, 0, 1);
+    const progress = this.myProgress;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
     ctx.beginPath();
     ctx.roundRect(trackX, trackY, trackWidth, 10, 5);
@@ -738,11 +1114,43 @@ export class DinoGame {
     ctx.font = '16px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('🏁', trackX + trackWidth - 4, trackY + 9);
+    if (this.race) {
+      this.rivalList
+        .filter((rival) => !rival.gone)
+        .forEach((rival) => this.drawTrackMarker(trackX + trackWidth * this.rivalProgress(rival), trackY + 5, rival.avatar, rival.dino.colors.body));
+      this.drawTrackMarker(trackX + trackWidth * progress, trackY + 5, getActivePlayer()?.avatar ?? '⭐', this.dino.colors.body);
+    }
     ctx.textAlign = 'start';
+  }
+
+  get myProgress() {
+    return clamp(this.meters / this.world.goal, 0, 1);
+  }
+
+  drawTrackMarker(x, y, emoji, color) {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = '14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(emoji, x, y + 1);
+    ctx.textBaseline = 'alphabetic';
   }
 
   destroy() {
     clearTimeout(this.gameOverTimer);
+    if (this.race) {
+      clearTimeout(this.podiumTimer);
+      clearTimeout(this.podiumRefreshTimer);
+      this.match.destroy();
+      leaveRoom();
+    }
     if (this.status === 'running' || this.status === 'paused') this.saveProgress();
     closeModal();
     this.loop.destroy();

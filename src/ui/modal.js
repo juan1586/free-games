@@ -18,8 +18,9 @@ export function closeModal() {
  * Muestra un diálogo de pausa, game over o nivel superado.
  * actions: [{ label, variant: 'primary' | 'secondary', onClick }]. La primera recibe el foco.
  * escapeIndex: acción que se ejecuta con Escape/P (útil para "Continuar" en la pausa).
+ * keyArmDelayMs: tiempo en que Enter/Espacio no hacen nada (por si se seguía pulsando "saltar").
  */
-export function showModal({ emoji, title, message, stars, stats = [], actions = [], tone = 'neutral', escapeIndex }) {
+export function showModal({ emoji, title, message, stars, stats = [], actions = [], tone = 'neutral', escapeIndex, keyArmDelayMs = KEY_ARM_DELAY_MS }) {
   closeModal();
 
   const starRow =
@@ -86,7 +87,7 @@ export function showModal({ emoji, title, message, stars, stats = [], actions = 
       event.preventDefault();
       event.stopPropagation();
       // Evita reiniciar sin querer si la niña seguía pulsando "saltar" al perder.
-      const isArmed = performance.now() - openedAt > KEY_ARM_DELAY_MS;
+      const isArmed = performance.now() - openedAt > keyArmDelayMs;
       if (isArmed && !event.repeat) document.activeElement?.click();
       return;
     }

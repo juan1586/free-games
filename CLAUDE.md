@@ -18,19 +18,21 @@ npm run check:levels   # bot que verifica que los niveles de Salto Geométrico s
 ## Estructura
 
 ```
-src/main.js        router por hash: #/, #/perfil, #/dino, #/dino/jugar?mundo=N,
+src/main.js        router por hash: #/, #/perfil, #/dino, #/dino/jugar?mundo=N[&carrera=1],
                    #/tetris, #/tetris/jugar?mundo=N, #/geo, #/geo/jugar?nivel=N[&practica=1|&carrera=1],
-                   #/geo/carrera?nivel=N (sala de espera)
+                   salas de espera: #/dino/carrera?mundo=N, #/geo/carrera?nivel=N
 src/core/          storage (localStorage con fallback en memoria), player (perfiles y datos por juego),
                    input (bindKeyboard, bindTouchGestures, bindHoldButton), audio (WebAudio generado,
                    createMusicLoop), gameLoop (rAF con delta y auto-pausa), canvas (setupCanvas con DPR),
-                   race (salas de 2 con PeerJS/WebRTC: createRoom, joinRoom, send, onMessage…)
-src/ui/            dom (el, navigate), hud (createGameHeader, createBanner), modal (showModal), menu, profile
-src/games/dino/    DinoGame, dinos (tipos y dibujo), worlds (mundos y obstáculos), setup
+                   race (salas de hasta 4 con PeerJS/WebRTC), raceMatch (lógica común de carrera),
+                   random (createRandom con semilla)
+src/ui/            dom (el, navigate), hud (createGameHeader, createBanner), modal (showModal), menu, profile,
+                   raceLobby (sala de espera común), raceResults (podio y fin de carrera)
+src/games/dino/    DinoGame, dinos (tipos y dibujo), worlds (mundos y obstáculos), setup, race, raceLobby
 src/games/tetris/  TetrisGame, levels, setup
 src/games/geo/     physics (motor sin DOM), levels, shapes (apariencias y dibujo del jugador),
                    obstacles (dibujo de piezas), achievements (retos y estrellas), GeoGame, setup,
-                   race (validación de mensajes de carrera), raceLobby (crear sala / unirse con código)
+                   race (config/apariencia/posición de carrera), raceLobby
 src/styles/        tokens.css (paleta, tipografía Fredoka, sombras), base, menu, games
 scripts/           check-geo-levels.mjs
 ```
@@ -54,12 +56,13 @@ scripts/           check-geo-levels.mjs
 - **Cualquier cambio en niveles, física o velocidades ⇒ ejecutar `npm run check:levels`.** Comprueba cada nivel en las 3 velocidades, con y sin turbo, con decisiones cada 100 ms, y que todas las monedas son alcanzables. Tarda unos 3 minutos; `npm run check:levels -- 2-3` comprueba solo un nivel.
 - Progreso: `unlockedLevel` (índice lineal 0..14). Solo desbloquea el modo normal (a cualquier velocidad). Estrellas = niveles completados + monedas + 2 por reto. Desbloquean apariencias (`shapes.js`).
 
-### Modo carrera (2 jugadores, cada uno en su dispositivo)
+## Modo carrera (Dino y Salto Geométrico, de 2 a 4 jugadores, cada uno en su dispositivo)
 
-- `core/race.js` es el transporte: sesión en el módulo (sobrevive al cambio de ruta sala → juego), código de 4 caracteres (id de peer `freegames-geo-<CÓDIGO>`), latido cada 2 s y mensaje `bye` al salir. El servidor público de PeerJS solo empareja; los datos van P2P.
-- Todo mensaje recibido pasa por `parseRaceMessage` (`games/geo/race.js`): nombres con `sanitizeName`, avatares de `AVATARS`, números finitos.
-- Cada jugador simula su partida con `physics.js` y envía su posición 15 veces/s; la rival se dibuja como fantasma. Protocolo: `hello`/`room`/`start` en la sala; `ready` → `go` (cuenta atrás) → `pos` → `finish` → `result` (lo decide la anfitriona) y `rematch`.
-- En carrera hay banderas como en práctica y no se guarda progreso de nivel ni monedas. Premio: `racesPlayed` para ambos y `raceWins` (copa 🏆) para quien gana; retos `first-race`, `race-win`, `race-wins-3`.
+- `core/race.js` es el transporte: sesión en el módulo (sobrevive al cambio de ruta sala → juego), código de 4 caracteres (id de peer `freegames-<juego>-<CÓDIGO>`), latido cada 2 s y `bye` al salir. Quien crea la sala (id `h`) es el centro: los invitados (`g1`, `g2`…) solo hablan con ella y ella reenvía todo sellado con `from`. Con la carrera empezada (`lockRoom`) o 4 jugadores, no entra nadie más. El servidor público de PeerJS solo empareja; los datos van P2P.
+- `core/raceMatch.js` (`RaceMatch`) es común a los dos juegos: `ready` → `go` {seed} (cuenta atrás) → `pos` → `finish` {ms} → `result` {winners} y `rematch`. La anfitriona da la salida cuando todos están listos y decide quién ganó; cada tiempo se mide desde la salida local. La revancha solo se ofrece cuando llegaron todos (o 30 s después del resultado).
+- `ui/raceLobby.js` es la sala de espera común (jugadores, código, empezar); cada juego le pasa su configuración y su "look" (figura de Geo / dino y nombre). Lo propio de cada juego y la validación de lo que llega están en `games/<juego>/race.js`; los nombres pasan por `sanitizeName` y los avatares por `AVATARS`.
+- Cada uno simula su partida y envía su posición 15 veces/s; los demás se dibujan como fantasmas y en la barra de avance. Chocar no elimina: en Geo se vuelve a la bandera; en Dino se tropieza (`STUMBLE_SECONDS`). La pista de Dino sale de la semilla de `go` (`createRandom`) en posiciones de distancia fijas, sin depender del turbo de cada uno.
+- En carrera no se guardan récords ni desbloqueos (en Dino sí las monedas). Premio: `racesPlayed` para todos y `raceWins` (copa 🏆) para quien gana, en `dino` y `geo`; en Geo además los retos `first-race`, `race-win`, `race-wins-3`.
 
 ## Añadir un juego nuevo
 

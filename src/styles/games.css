@@ -1140,25 +1140,6 @@
   text-transform: uppercase;
 }
 
-.race-rival {
-  display: grid;
-  justify-items: center;
-  gap: 2px;
-  padding: 12px 28px;
-  border-radius: var(--radius-md);
-  background: var(--c-white);
-  box-shadow: var(--shadow-sm);
-}
-
-.race-rival__avatar {
-  font-size: 3rem;
-  line-height: 1.1;
-}
-
-.race-rival small {
-  color: var(--c-ink-soft);
-}
-
 .race-lobby__waiting {
   font-weight: 600;
   color: var(--c-purple-dark);
@@ -1191,6 +1172,90 @@
 
 @media (prefers-reduced-motion: reduce) {
   .race-lobby__waiting {
+    animation: none;
+  }
+}
+
+.dino-playbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dino-playbar .btn--xl {
+  flex: 1 1 260px;
+  width: auto;
+}
+
+.dino-playbar .btn--lg {
+  flex: 0 1 auto;
+}
+
+/* Jugadores en la sala de espera (hasta 4) */
+
+.race-players {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  list-style: none;
+}
+
+.race-player {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 2px;
+  min-height: 112px;
+  padding: 10px 8px;
+  border: 3px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--c-white);
+  box-shadow: var(--shadow-sm);
+  animation: race-player-in 0.35s var(--ease-bounce);
+}
+
+.race-player strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.race-player small {
+  color: var(--c-ink-soft);
+}
+
+.race-player.is-me {
+  border-color: var(--c-purple);
+}
+
+.race-player.is-empty {
+  border: 3px dashed var(--c-purple-soft);
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+
+.race-player.is-empty .race-player__avatar {
+  opacity: 0.35;
+}
+
+.race-player__avatar {
+  font-size: 2.4rem;
+  line-height: 1.1;
+}
+
+@keyframes race-player-in {
+  from {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .race-player {
     animation: none;
   }
 }

@@ -7,7 +7,7 @@ export const AVATARS = ['🦄', '🐱', '🐶', '🦊', '🐼', '🐸', '🐵', 
 const DEFAULT_STATE = { players: [], activePlayerId: null, muted: false };
 
 const createDefaultGames = () => ({
-  dino: { bestScore: 0, coins: 0, unlockedWorld: 0, dinoType: 'trex', dinoName: '' },
+  dino: { bestScore: 0, coins: 0, unlockedWorld: 0, dinoType: 'trex', dinoName: '', racesPlayed: 0, raceWins: 0 },
   tetris: { bestScore: 0, bestLines: 0, unlockedWorld: 0, stars: {} },
   geo: {
     unlockedLevel: 0,
