@@ -14,7 +14,19 @@ export const MAX_PLAYERS = 4;
 export const HOST_ID = 'h';
 const PLAYER_ID_PATTERN = /^(h|g\d{1,3})$/;
 const MAX_CREATE_TRIES = 4;
-const CONNECT_TIMEOUT_MS = 12000;
+// Abrir la conexión con el servidor de PeerJS (a veces tarda o no responde).
+const OPEN_TIMEOUT_MS = 10000;
+// Cada intento de entrar en una sala: conexión directa + bienvenida de la anfitriona.
+const ATTEMPT_TIMEOUT_MS = 10000;
+const MAX_JOIN_TRIES = 3;
+const RETRY_PAUSE_MS = 800;
+// Si la anfitriona pierde el servidor (app en segundo plano, wifi que parpadea), se vuelve a registrar.
+const RECONNECT_MIN_MS = 1000;
+const RECONNECT_MAX_MS = 10000;
+const NETWORK_ERRORS = ['server-timeout', 'network', 'server-error', 'socket-error', 'socket-closed'];
+// Fallos con los que vale la pena volver a intentar entrar. 'peer-unavailable' (código que no existe) no:
+// el servidor solo lo avisa una vez y el reintento se quedaría esperando hasta el tiempo límite.
+const RETRY_JOIN_ERRORS = ['timeout', 'connect-failed', 'negotiation-failed', ...NETWORK_ERRORS];
 const MAX_MESSAGE_KEYS = 12;
 // Latido: si otra tablet se apaga o pierde internet, WebRTC tarda mucho en notarlo.
 const HEARTBEAT_MS = 2000;
@@ -25,6 +37,9 @@ const CLOSE_DELAY_MS = 150;
 const TRANSPORT_TYPES = ['ping', 'bye', 'welcome', 'full', 'left'];
 
 let session = null;
+// Marca de la sala que se está abriendo: si cambia (salir, otro intento), lo que estaba a medias se descarta.
+let opening = null;
+let peerClassPromise = null;
 
 const peerId = (game, code) => `freegames-${game}-${code}`;
 
@@ -47,8 +62,13 @@ export function normalizeCode(rawCode) {
 export function friendlyError(error) {
   switch (error?.type) {
     case 'peer-unavailable':
-    case 'timeout':
       return 'No encontramos esa sala. Revisa el código. 🔍';
+    case 'timeout':
+    case 'connect-failed':
+    case 'negotiation-failed':
+      return 'Encontramos la sala, pero no logramos conectar. Inténtalo otra vez. 📶';
+    case 'server-timeout':
+      return 'El servidor de carreras tarda en responder. Inténtalo otra vez. ⏳';
     case 'room-full':
       return 'Esa sala ya está llena o la carrera ya empezó. 🙈';
     case 'browser-incompatible':
@@ -63,24 +83,55 @@ export function friendlyError(error) {
   }
 }
 
-async function loadPeerClass() {
-  const module = await import('peerjs');
-  return module.Peer ?? module.default;
+function loadPeerClass() {
+  peerClassPromise ??= import('peerjs')
+    .then((module) => module.Peer ?? module.default)
+    .catch((error) => {
+      peerClassPromise = null;
+      throw error;
+    });
+  return peerClassPromise;
 }
+
+/** Descarga la librería de antemano (al entrar en la sala de espera) para que crear/unirse sea más rápido. */
+export function preloadRace() {
+  loadPeerClass().catch(() => {});
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const cancelled = () => ({ type: 'cancelled' });
 
 function openPeer(Peer, id) {
   return new Promise((resolve, reject) => {
     const peer = id ? new Peer(id) : new Peer();
+    const handleOpen = () => {
+      clearTimeout(timer);
+      peer.off('error', handleError);
+      resolve(peer);
+    };
     const handleError = (error) => {
+      clearTimeout(timer);
+      peer.off('open', handleOpen);
+      peer.off('error', handleError);
       peer.destroy();
       reject(error);
     };
-    peer.once('open', () => {
-      peer.off('error', handleError);
-      resolve(peer);
-    });
-    peer.once('error', handleError);
+    const timer = setTimeout(() => handleError({ type: 'server-timeout' }), OPEN_TIMEOUT_MS);
+    peer.once('open', handleOpen);
+    peer.on('error', handleError);
   });
+}
+
+/** Como openPeer, pero con un segundo intento si falla la red. */
+async function openPeerWithRetry(Peer, id) {
+  try {
+    return await openPeer(Peer, id);
+  } catch (error) {
+    if (!NETWORK_ERRORS.includes(error?.type)) throw error;
+    await wait(RETRY_PAUSE_MS);
+    return openPeer(Peer, id);
+  }
 }
 
 function startSession(peer, role, code) {
@@ -95,6 +146,7 @@ function startSession(peer, role, code) {
     locked: false,
     // Datos libres del juego (jugadores, configuración de la carrera…).
     meta: {},
+    cleanups: [],
     listeners: { message: new Set(), leave: new Set(), disconnect: new Set() },
   };
   return session;
@@ -113,6 +165,7 @@ const isValidMessage = (data) =>
  */
 function watchLink(current, conn, { onData, onClose }) {
   let lastSeen = Date.now();
+  let lastTick = lastSeen;
   let closed = false;
   const close = () => {
     if (closed) return;
@@ -122,7 +175,11 @@ function watchLink(current, conn, { onData, onClose }) {
     if (session === current) onClose();
   };
   const heartbeat = setInterval(() => {
-    if (Date.now() - lastSeen > SILENCE_LIMIT_MS) close();
+    const now = Date.now();
+    // Si esta pantalla estuvo congelada (app en segundo plano), el silencio fue nuestro: se da otra oportunidad.
+    if (now - lastTick > SILENCE_LIMIT_MS) lastSeen = now;
+    lastTick = now;
+    if (now - lastSeen > SILENCE_LIMIT_MS) close();
     else if (conn.open) conn.send({ type: 'ping' });
   }, HEARTBEAT_MS);
   conn.on('data', (data) => {
@@ -168,16 +225,59 @@ function acceptGuest(current, conn) {
   conn.send({ type: 'welcome', id });
 }
 
+/**
+ * La anfitriona tiene que seguir registrada en el servidor para que la encuentren con el código.
+ * Si se pierde (p. ej. al cambiar a otra app para compartir el código), se vuelve a registrar sola.
+ */
+function keepRegistered(current) {
+  const { peer } = current;
+  let retryTimer = null;
+  let delay = RECONNECT_MIN_MS;
+  const reconnect = () => {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+    if (session === current && peer.disconnected && !peer.destroyed) peer.reconnect();
+  };
+  const handleVisible = () => {
+    if (document.visibilityState === 'visible') reconnect();
+  };
+  peer.on('disconnected', () => {
+    if (session !== current || peer.destroyed) return;
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(reconnect, delay);
+    delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+  });
+  peer.on('open', () => {
+    delay = RECONNECT_MIN_MS;
+  });
+  document.addEventListener('visibilitychange', handleVisible);
+  window.addEventListener('online', reconnect);
+  current.cleanups.push(() => {
+    clearTimeout(retryTimer);
+    document.removeEventListener('visibilitychange', handleVisible);
+    window.removeEventListener('online', reconnect);
+  });
+}
+
 /** Abre una sala y espera a los demás. Devuelve el código. */
 export async function createRoom(game) {
   leaveRoom();
+  const token = {};
+  opening = token;
   const Peer = await loadPeerClass();
   let lastError = null;
   for (let attempt = 0; attempt < MAX_CREATE_TRIES; attempt += 1) {
+    if (opening !== token) throw cancelled();
     const code = randomCode();
     try {
-      const peer = await openPeer(Peer, peerId(game, code));
+      const peer = await openPeerWithRetry(Peer, peerId(game, code));
+      if (opening !== token) {
+        peer.destroy();
+        throw cancelled();
+      }
+      opening = null;
       const current = startSession(peer, 'host', code);
+      keepRegistered(current);
       peer.on('connection', (conn) => {
         conn.on('open', () => {
           if (session === current) acceptGuest(current, conn);
@@ -190,6 +290,7 @@ export async function createRoom(game) {
       if (error?.type !== 'unavailable-id') break;
     }
   }
+  if (opening === token) opening = null;
   throw lastError;
 }
 
@@ -200,51 +301,104 @@ export function lockRoom(isLocked) {
 
 // ---------- Invitado ----------
 
-/** Se une a una sala con el código. Resuelve cuando la anfitriona le da su id. */
-export async function joinRoom(game, rawCode) {
-  leaveRoom();
-  const code = normalizeCode(rawCode);
-  const Peer = await loadPeerClass();
-  const peer = await openPeer(Peer);
-  const current = startSession(peer, 'guest', code);
-  try {
-    await new Promise((resolve, reject) => {
-      const conn = peer.connect(peerId(game, code), { reliable: true });
-      const timer = setTimeout(() => reject({ type: 'timeout' }), CONNECT_TIMEOUT_MS);
-      const fail = (error) => {
-        clearTimeout(timer);
+/**
+ * Un intento de conectar con la anfitriona. Resuelve cuando ella da la bienvenida;
+ * si la conexión se cae antes o no llega a abrirse a tiempo, falla enseguida para reintentar.
+ */
+function connectToHost(current, game) {
+  return new Promise((resolve, reject) => {
+    const { peer } = current;
+    const conn = peer.connect(peerId(game, current.code), { reliable: true });
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      peer.off('error', finish);
+      if (error) {
+        conn.close();
         reject(error);
-      };
-      peer.once('error', fail);
-      conn.on('open', () => {
-        const close = watchLink(current, conn, {
-          onData: (data) => {
-            if (data.type === 'welcome' && isPlayerId(data.id) && !current.myId) {
-              clearTimeout(timer);
-              current.myId = data.id;
-              current.links.set(HOST_ID, { conn, close });
-              resolve();
-            } else if (data.type === 'full') {
-              fail({ type: 'room-full' });
-            } else if (data.type === 'left') {
-              if (isPlayerId(data.id)) emit(current, 'leave', data.id);
-            } else if (current.myId && isPlayerId(data.from) && !TRANSPORT_TYPES.includes(data.type)) {
-              emit(current, 'message', data);
-            }
-          },
-          onClose: () => {
-            current.links.clear();
-            if (!current.myId) fail({ type: 'peer-unavailable' });
-            else emit(current, 'disconnect');
-          },
-        });
+      } else {
+        resolve();
+      }
+    };
+    const timer = setTimeout(() => finish({ type: 'timeout' }), ATTEMPT_TIMEOUT_MS);
+    peer.on('error', finish);
+    conn.on('error', () => finish({ type: 'connect-failed' }));
+    conn.on('close', () => finish({ type: 'connect-failed' }));
+    conn.on('open', () => {
+      if (settled) return;
+      const close = watchLink(current, conn, {
+        onData: (data) => {
+          if (data.type === 'welcome' && isPlayerId(data.id) && !current.myId) {
+            current.myId = data.id;
+            current.links.set(HOST_ID, { conn, close });
+            finish();
+          } else if (data.type === 'full') {
+            finish({ type: 'room-full' });
+          } else if (data.type === 'left') {
+            if (isPlayerId(data.id)) emit(current, 'leave', data.id);
+          } else if (current.myId && isPlayerId(data.from) && !TRANSPORT_TYPES.includes(data.type)) {
+            emit(current, 'message', data);
+          }
+        },
+        onClose: () => {
+          current.links.clear();
+          if (!current.myId) finish({ type: 'connect-failed' });
+          else emit(current, 'disconnect');
+        },
       });
     });
-  } catch (error) {
-    if (session === current) leaveRoom();
-    throw error;
+  });
+}
+
+/**
+ * Se une a una sala con el código. Resuelve cuando la anfitriona le da su id.
+ * Si la conexión falla, reintenta; onRetry(intento, máximo) permite avisarlo en pantalla.
+ */
+export async function joinRoom(game, rawCode, { onRetry } = {}) {
+  leaveRoom();
+  const token = {};
+  opening = token;
+  const code = normalizeCode(rawCode);
+  const Peer = await loadPeerClass();
+  if (opening !== token) throw cancelled();
+  const peer = await openPeerWithRetry(Peer);
+  if (opening !== token) {
+    peer.destroy();
+    throw cancelled();
   }
-  return code;
+  opening = null;
+  const current = startSession(peer, 'guest', code);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await connectToHost(current, game);
+      return code;
+    } catch (error) {
+      if (session !== current) throw cancelled();
+      if (attempt >= MAX_JOIN_TRIES || !RETRY_JOIN_ERRORS.includes(error?.type)) {
+        leaveRoom();
+        throw error;
+      }
+    }
+    onRetry?.(attempt + 1, MAX_JOIN_TRIES);
+    await wait(RETRY_PAUSE_MS);
+    if (session !== current) throw cancelled();
+    if (current.peer.disconnected || current.peer.destroyed) {
+      // Se perdió el servidor: se abre una conexión nueva.
+      current.peer.destroy();
+      try {
+        current.peer = await openPeerWithRetry(Peer);
+      } catch (error) {
+        if (session === current) leaveRoom();
+        throw error;
+      }
+      if (session !== current) {
+        current.peer.destroy();
+        throw cancelled();
+      }
+    }
+  }
 }
 
 // ---------- Común ----------
@@ -281,9 +435,11 @@ export const onDisconnect = (listener) => subscribe('disconnect', listener);
 
 /** Sale de la sala avisando a los demás. No avisa a los oyentes propios: quien sale ya lo sabe. */
 export function leaveRoom() {
+  opening = null;
   if (!session) return;
   const current = session;
   session = null;
+  current.cleanups.forEach((cleanup) => cleanup());
   current.links.forEach((link) => {
     if (link.conn.open) link.conn.send({ type: 'bye' });
   });

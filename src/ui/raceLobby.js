@@ -14,6 +14,7 @@ import {
   onDisconnect,
   onLeave,
   onMessage,
+  preloadRace,
   send,
 } from '../core/race.js';
 import { createHello, parsePlayer, parseRoster } from '../core/raceMatch.js';
@@ -234,6 +235,7 @@ export function mountRaceLobby(root, { game, title, backPath, hostConfig, descri
       listen();
       renderHost();
     } catch (error) {
+      if (error?.type === 'cancelled') return;
       renderChoice();
       setStatus(friendlyError(error), 'error');
     }
@@ -246,12 +248,15 @@ export function mountRaceLobby(root, { game, title, backPath, hostConfig, descri
     setStatus('');
     renderBusy('Buscando la sala…');
     try {
-      await joinRoom(game, code);
+      await joinRoom(game, code, {
+        onRetry: (attempt, maxTries) => renderBusy(`Buscando la sala… (intento ${attempt} de ${maxTries})`),
+      });
       trackEvent(`carrera-unida-${game}`, `Alguien se unió (${game})`);
       listen();
       send(createHello(look));
       renderGuest();
     } catch (error) {
+      if (error?.type === 'cancelled') return;
       renderChoice();
       setStatus(friendlyError(error), 'error');
     }
@@ -299,6 +304,7 @@ export function mountRaceLobby(root, { game, title, backPath, hostConfig, descri
   );
 
   leaveRoom();
+  preloadRace();
   renderChoice();
 
   return () => {
