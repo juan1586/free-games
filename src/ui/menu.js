@@ -3,6 +3,8 @@ import { getActivePlayer, getGameData, getPlayers, isMuted, setActivePlayer, set
 import { sounds } from '../core/audio.js';
 import { DINO_WORLDS } from '../games/dino/worlds.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
+import { GEO_LEVELS } from '../games/geo/levels.js';
+import { ACHIEVEMENTS, MAX_STARS, countCompleted, countStars as countGeoStars } from '../games/geo/achievements.js';
 
 function countStars(starsByWorld) {
   return Object.values(starsByWorld).reduce((total, stars) => total + stars, 0);
@@ -79,10 +81,19 @@ function renderTetrisArt() {
   );
 }
 
+function renderGeoArt() {
+  return [
+    el('span', { className: 'art-geo-cube' }),
+    el('span', { className: 'art-geo-spike' }),
+    el('span', { className: 'art-geo-ground' }),
+  ];
+}
+
 export function mountMenu(root) {
   const player = getActivePlayer();
   const dino = getGameData('dino');
   const tetris = getGameData('tetris');
+  const geo = getGameData('geo');
 
   const muteButton = el('button', {
     className: 'icon-btn',
@@ -139,6 +150,18 @@ export function mountMenu(root) {
         { icon: '🏆', label: 'Récord', value: tetris.bestScore },
         { icon: '⭐', label: 'Estrellas', value: `${countStars(tetris.stars)}/${TETRIS_WORLDS.length * 3}` },
         { icon: '🧱', label: 'Líneas', value: tetris.bestLines },
+      ],
+    }),
+    renderGameCard({
+      path: '/geo',
+      title: 'Salto Geométrico',
+      tagline: 'Salta, vuela y gira por 5 mundos de figuras.',
+      theme: 'geo',
+      art: renderGeoArt(),
+      records: [
+        { icon: '🏁', label: 'Niveles', value: `${countCompleted(geo)}/${GEO_LEVELS.length}` },
+        { icon: '⭐', label: 'Estrellas', value: `${countGeoStars(geo)}/${MAX_STARS}` },
+        { icon: '🏅', label: 'Retos', value: `${geo.achievements.length}/${ACHIEVEMENTS.length}` },
       ],
     }),
   ]);

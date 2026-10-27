@@ -9,6 +9,15 @@ const DEFAULT_STATE = { players: [], activePlayerId: null, muted: false };
 const createDefaultGames = () => ({
   dino: { bestScore: 0, coins: 0, unlockedWorld: 0, dinoType: 'trex', dinoName: '' },
   tetris: { bestScore: 0, bestLines: 0, unlockedWorld: 0, stars: {} },
+  geo: {
+    unlockedLevel: 0,
+    levels: {},
+    skin: { shape: 'cube', color: 'grape', trail: 'none', face: 'happy' },
+    achievements: [],
+    totalAttempts: 0,
+    totalJumps: 0,
+    skinChanges: 0,
+  },
 });
 
 let state = loadState(DEFAULT_STATE);

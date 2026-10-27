@@ -342,3 +342,54 @@
     grid-template-rows: 150px auto;
   }
 }
+
+/* Salto Geométrico */
+
+.game-card--geo .game-card__art {
+  background: var(--g-geo);
+}
+
+.art-geo-ground {
+  position: absolute;
+  inset: auto 0 0;
+  height: 40px;
+  border-top: 4px solid var(--c-white);
+  background: repeating-linear-gradient(90deg, #ff7eb6 0 40px, #f0609f 40px 80px);
+  animation: ground-scroll 0.8s linear infinite;
+}
+
+.art-geo-cube {
+  position: absolute;
+  left: 22%;
+  bottom: 40px;
+  width: 46px;
+  height: 46px;
+  border: 4px solid var(--c-ink);
+  border-radius: 10px;
+  background: radial-gradient(circle at 50% 50%, var(--c-yellow) 0 34%, transparent 35%), var(--c-purple);
+  animation: geo-cube-hop 1.4s ease-in-out infinite;
+}
+
+.art-geo-spike {
+  position: absolute;
+  bottom: 40px;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(to top, var(--c-pink), var(--c-white));
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  animation: cactus-run 1.4s linear infinite;
+}
+
+@keyframes geo-cube-hop {
+  0%,
+  45% {
+    transform: translateY(0) rotate(0);
+  }
+  65% {
+    transform: translateY(-80px) rotate(90deg);
+  }
+  85%,
+  100% {
+    transform: translateY(0) rotate(180deg);
+  }
+}

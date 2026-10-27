@@ -45,4 +45,66 @@ export const sounds = {
   levelUp: () => playMelody([[523, 0], [784, 0.1], [1047, 0.2], [1319, 0.3, 0.3]]),
   win: () => playMelody([[784, 0], [988, 0.12], [1175, 0.24], [1568, 0.36, 0.4]]),
   gameOver: () => playMelody([[392, 0, 0.2], [330, 0.2, 0.2], [262, 0.4, 0.4]], 'sawtooth'),
+  portal: () => playTone({ frequency: 300, endFrequency: 1200, duration: 0.3, type: 'sine', volume: 0.1 }),
+  orb: () => playTone({ frequency: 700, endFrequency: 1400, duration: 0.12, type: 'triangle', volume: 0.08 }),
+  pad: () => playTone({ frequency: 200, endFrequency: 900, duration: 0.2, type: 'triangle', volume: 0.1 }),
+  flip: () => playTone({ frequency: 520, endFrequency: 260, duration: 0.1, type: 'triangle', volume: 0.07 }),
+  checkpoint: () => playMelody([[880, 0, 0.06], [1175, 0.06, 0.1]], 'triangle'),
+  achievement: () => playMelody([[659, 0], [784, 0.1], [988, 0.2], [1319, 0.3], [1568, 0.42, 0.35]]),
 };
+
+const NOTE_OFFSETS = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };
+
+/** Convierte 'A4', 'C#5'... en frecuencia (Hz). */
+export function noteFrequency(name) {
+  const match = /^([A-G])(#?)(\d)$/.exec(name);
+  if (!match) return 0;
+  const [, letter, sharp, octave] = match;
+  const semitones = NOTE_OFFSETS[letter] + (sharp ? 1 : 0) + (Number(octave) - 4) * 12;
+  return 440 * 2 ** (semitones / 12);
+}
+
+const MUSIC_LOOKAHEAD_SECONDS = 0.2;
+const MUSIC_TICK_MS = 50;
+
+/**
+ * Bucle musical sencillo en corcheas. melody y bass son cadenas de notas separadas por
+ * espacios ('C5 E5 - G5'); '-' es silencio. El silencio global se respeta nota a nota.
+ */
+export function createMusicLoop({ bpm, melody, bass = '' }) {
+  const melodyNotes = melody.split(/\s+/).map(noteFrequency);
+  const bassNotes = bass.split(/\s+/).filter(Boolean).map(noteFrequency);
+  const stepSeconds = 60 / bpm / 2;
+  let timer = null;
+  let stepIndex = 0;
+  let nextTime = 0;
+
+  function schedule() {
+    const context = getContext();
+    if (!context) return;
+    while (nextTime < context.currentTime + MUSIC_LOOKAHEAD_SECONDS) {
+      const delay = Math.max(0, nextTime - context.currentTime);
+      const lead = melodyNotes[stepIndex % melodyNotes.length];
+      if (lead) playTone({ frequency: lead, delay, duration: stepSeconds * 0.9, type: 'triangle', volume: 0.045 });
+      const bassNote = bassNotes.length && stepIndex % 2 === 0 ? bassNotes[(stepIndex / 2) % bassNotes.length] : 0;
+      if (bassNote) playTone({ frequency: bassNote, delay, duration: stepSeconds * 1.6, type: 'sine', volume: 0.07 });
+      nextTime += stepSeconds;
+      stepIndex += 1;
+    }
+  }
+
+  return {
+    start() {
+      const context = getContext();
+      if (!context || timer) return;
+      stepIndex = 0;
+      nextTime = context.currentTime + 0.05;
+      schedule();
+      timer = setInterval(schedule, MUSIC_TICK_MS);
+    },
+    stop() {
+      clearInterval(timer);
+      timer = null;
+    },
+  };
+}

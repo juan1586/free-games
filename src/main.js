@@ -12,11 +12,18 @@ import { mountDinoSetup } from './games/dino/setup.js';
 import { mountDinoGame } from './games/dino/DinoGame.js';
 import { mountTetrisSetup } from './games/tetris/setup.js';
 import { mountTetrisGame } from './games/tetris/TetrisGame.js';
+import { mountGeoSetup } from './games/geo/setup.js';
+import { mountGeoGame } from './games/geo/GeoGame.js';
 
 const app = document.getElementById('app');
 
 const parseWorld = (query) => {
   const value = Number.parseInt(query.get('mundo') ?? '0', 10);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+};
+
+const parseLevel = (query) => {
+  const value = Number.parseInt(query.get('nivel') ?? '0', 10);
   return Number.isFinite(value) && value >= 0 ? value : 0;
 };
 
@@ -28,6 +35,8 @@ const ROUTES = {
   '/dino/jugar': (query) => mountDinoGame(app, { worldIndex: parseWorld(query) }),
   '/tetris': () => mountTetrisSetup(app),
   '/tetris/jugar': (query) => mountTetrisGame(app, { worldIndex: parseWorld(query) }),
+  '/geo': () => mountGeoSetup(app),
+  '/geo/jugar': (query) => mountGeoGame(app, { levelIndex: parseLevel(query), practice: query.get('practica') === '1' }),
 };
 
 let cleanupCurrentView = null;
