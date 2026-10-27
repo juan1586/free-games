@@ -10,7 +10,7 @@ import { DINOS, isDinoUnlocked } from '../games/dino/dinos.js';
 import { GEO_LEVELS, GEO_WORLDS } from '../games/geo/levels.js';
 import { ACHIEVEMENTS, countStars as countGeoStars } from '../games/geo/achievements.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
-import { ALL_RIDES, GOLDEN_BEANS, GOLDEN_EGGS, PANACA_RIDES, PARK_WORLDS, RIDES, isWorldOpen } from '../games/park/worlds.js';
+import { ALL_RIDES, GOLDEN_BEANS, GOLDEN_EGGS, GOLDEN_SHELLS, PANACA_RIDES, PARK_WORLDS, PLAYA_RIDES, RIDES, isWorldOpen } from '../games/park/worlds.js';
 
 export const STICKER_GROUPS = [
   { id: 'dino', title: '🦖 Dino Corre', color: '#4dd4ac' },
@@ -82,6 +82,13 @@ export const STICKERS = [
   ),
   sticker('park', 'park-eggs-all', '🥚', 'Todos los huevos', 'Encuentra todos los huevos dorados', ({ park }) =>
     park.goldenEggs.length >= GOLDEN_EGGS.length,
+  ),
+  sticker('park', 'park-playa', '🏖️', 'Playera', 'Abre la Playa de Cartagena', ({ park }) => isWorldOpen(PARK_WORLDS[2], park)),
+  sticker('park', 'park-playa-all', '⚓', 'Toda la playa', 'Monta en todas las atracciones de la Playa de Cartagena', ({ park }) =>
+    PLAYA_RIDES.every((ride) => (park.ridesDone[ride.id] ?? 0) >= 1),
+  ),
+  sticker('park', 'park-shells-all', '🐚', 'Todas las caracolas', 'Encuentra todas las caracolas doradas', ({ park }) =>
+    park.goldenShells.length >= GOLDEN_SHELLS.length,
   ),
   sticker('park', 'park-missions', '📋', 'Misionera', 'Cumple 10 misiones del parque', ({ park }) => park.missionsDone >= 10),
   sticker('park', 'park-friends', '👭', 'Parque con amigas', 'Entra al parque con amigas', ({ park }) => park.friendVisits >= 1),

@@ -92,8 +92,42 @@ export const PANACA_RIDES = [
   },
 ];
 
+/** Atracciones de la Playa de Cartagena. */
+export const PLAYA_RIDES = [
+  {
+    id: 'galeon',
+    name: 'Galeón Pirata',
+    emoji: '🏴‍☠️',
+    description: '¡Dispara el cañón a los barriles y a los barcos piratas!',
+    entrance: { x: 24, z: -18 },
+    queueDir: { x: -0.8, z: 0.6 },
+    fastPassPrice: 12,
+    secondsPerPerson: 2.6,
+  },
+  {
+    id: 'lancha',
+    name: 'Lancha a las Islas',
+    emoji: '🚤',
+    description: 'Maneja la lancha, recoge estrellas de mar y esquiva las medusas.',
+    entrance: { x: -24, z: -18 },
+    queueDir: { x: 0.8, z: 0.6 },
+    fastPassPrice: 10,
+    secondsPerPerson: 2.4,
+  },
+  {
+    id: 'buceo',
+    name: 'Buceo en el Arrecife',
+    emoji: '🤿',
+    description: 'Nada entre corales, recoge perlas y encuentra el tesoro hundido.',
+    entrance: { x: 0, z: -30 },
+    queueDir: { x: 0, z: 1 },
+    fastPassPrice: 10,
+    secondsPerPerson: 2.4,
+  },
+];
+
 /** Todas las atracciones de todos los parques (los ids no se repiten). */
-export const ALL_RIDES = [...RIDES, ...PANACA_RIDES];
+export const ALL_RIDES = [...RIDES, ...PANACA_RIDES, ...PLAYA_RIDES];
 
 export const getRide = (id) => ALL_RIDES.find((ride) => ride.id === id);
 
@@ -123,6 +157,18 @@ export const GOLDEN_EGGS = [
   { id: 'egg-8', x: -27, y: 0.9, z: 46, hint: 'Junto al estanque de los patos' },
 ];
 
+/** Caracolas doradas escondidas en la Playa de Cartagena. */
+export const GOLDEN_SHELLS = [
+  { id: 'shell-1', x: -46, y: 3.9, z: 1, hint: 'En lo alto de la muralla (sube por la escalera)' },
+  { id: 'shell-2', x: 0, y: 0.9, z: -5, hint: 'Detrás de la Torre del Reloj' },
+  { id: 'shell-3', x: 16, y: 3.9, z: 44, hint: 'En el techo de la chiva (¡trepa por las maletas!)' },
+  { id: 'shell-4', x: 40, y: 0.9, z: 40, hint: 'Junto al castillo de arena' },
+  { id: 'shell-5', x: 7, y: 0.9, z: -54, hint: 'Detrás del acuario' },
+  { id: 'shell-6', x: -9.9, y: 3.9, z: 37, hint: 'En un balcón (¡sube por las cajas de frutas!)' },
+  { id: 'shell-7', x: 28, y: 0.9, z: -44, hint: 'Junto a la proa del galeón' },
+  { id: 'shell-8', x: 42, y: 0.9, z: 8, hint: 'En la orilla del mar' },
+];
+
 /**
  * Parques. `treasure`: lo que se colecciona en cada uno (`key` es el campo de `park` donde se guarda).
  * `unlock`: qué hay que hacer para abrirlo (sin `unlock`, abierto desde el principio).
@@ -148,6 +194,18 @@ export const PARK_WORLDS = [
       check: (data) => RIDES.every((ride) => (data.ridesDone[ride.id] ?? 0) >= 1),
     },
   },
+  {
+    id: 'playa',
+    name: 'Playa de Cartagena',
+    emoji: '🏖️',
+    description: 'Murallas, casitas con balcones, el mar y un galeón pirata.',
+    rides: PLAYA_RIDES,
+    treasure: { key: 'goldenShells', name: 'Caracolas doradas', short: 'Caracolas', icon: '🐚', item: 'caracola dorada', items: GOLDEN_SHELLS },
+    unlock: {
+      hint: 'Monta en todas las atracciones de la Granja Panaca',
+      check: (data) => PANACA_RIDES.every((ride) => (data.ridesDone[ride.id] ?? 0) >= 1),
+    },
+  },
 ];
 
 export const isWorldOpen = (world, data) => !world.unlock || world.unlock.check(data);
@@ -155,7 +213,6 @@ export const getWorldOfRide = (rideId) => PARK_WORLDS.find((world) => world.ride
 
 /** Mundos que vendrán (se muestran como «próximamente» en la pantalla previa). */
 export const UPCOMING_WORLDS = [
-  { id: 'playa', name: 'Playa de Cartagena', emoji: '🏖️' },
   { id: 'selva', name: 'Selva Amazónica', emoji: '🐒' },
   { id: 'dulces', name: 'Castillo de Dulces', emoji: '🍭' },
 ];

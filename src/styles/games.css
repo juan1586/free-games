@@ -1736,6 +1736,14 @@
   display: flex;
 }
 
+.park-touch .touch-btn--aim {
+  display: none;
+}
+
+.stage--park[data-mode='ride'].has-aim .park-touch .touch-btn--aim {
+  display: inline-block;
+}
+
 .stage--park[data-mode='ride'].has-reticle .park-reticle {
   display: block;
 }

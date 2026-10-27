@@ -70,6 +70,12 @@ const MUSIC = {
     melody: 'C5 E5 G5 E5 F5 A5 G5 - E5 G5 C6 G5 A5 G5 E5 - D5 F5 A5 F5 G5 E5 C5 - D5 E5 F5 D5 C5 - - -',
     bass: 'C3 C3 F3 F3 C3 C3 G3 G3 C3 C3 F3 F3 G3 G3 C3 C3',
   },
+  // Algo de cumbia y champeta para la costa.
+  playa: {
+    bpm: 120,
+    melody: 'A4 C5 E5 C5 D5 E5 G5 E5 - E5 D5 C5 D5 E5 C5 A4 - A4 C5 E5 G5 A5 G5 E5 - D5 C5 D5 E5 A4 - - -',
+    bass: 'A2 A3 A2 A3 F2 F3 F2 F3 C3 C3 G2 G3 A2 A3 E3 E3',
+  },
   panaca: {
     bpm: 138,
     melody: 'G4 G4 C5 C5 E5 E5 C5 - D5 D5 B4 B4 G4 - - - G4 G4 C5 C5 E5 E5 G5 - F5 E5 D5 B4 C5 - - -',
@@ -144,8 +150,8 @@ export class ParkGame {
     this.camera.position.set(SPAWN.x, 5, SPAWN.z + CAMERA_DISTANCE);
 
     this.keys = { forward: false, back: false, left: false, right: false, run: false };
-    this.touchSteer = { left: false, right: false };
-    this.rideInput = { left: false, right: false, action: false, actionPressed: false, lookDelta: 0 };
+    this.touchSteer = { left: false, right: false, up: false, down: false };
+    this.rideInput = { left: false, right: false, up: false, down: false, action: false, actionPressed: false, lookDelta: 0, lookDeltaY: 0 };
     this.status = 'walk';
     this.queueRide = null;
     this.rideRun = null;
@@ -247,9 +253,14 @@ export class ParkGame {
     this.jumpButton = createTouchButton({ icon: '⬆️', label: 'Saltar', variant: 'jump' });
     this.steerLeft = createTouchButton({ icon: '◀', label: 'Izquierda', variant: 'steer' });
     this.steerRight = createTouchButton({ icon: '▶', label: 'Derecha', variant: 'steer' });
+    // Arriba/abajo: solo en las atracciones que apuntan (el cañón del galeón).
+    this.steerUp = createTouchButton({ icon: '▲', label: 'Arriba', variant: 'steer' });
+    this.steerDown = createTouchButton({ icon: '▼', label: 'Abajo', variant: 'steer' });
+    this.steerUp.classList.add('touch-btn--aim');
+    this.steerDown.classList.add('touch-btn--aim');
     const touch = el('div', { className: 'park-touch' }, [
       this.joystick.element,
-      el('div', { className: 'park-touch__steer' }, [this.steerLeft, this.steerRight]),
+      el('div', { className: 'park-touch__steer' }, [this.steerLeft, this.steerUp, this.steerDown, this.steerRight]),
       this.jumpButton,
     ]);
 
@@ -345,6 +356,8 @@ export class ParkGame {
       bindHoldButton(this.actionButton, { onPress: () => this.pressRideAction(), onRelease: () => (this.rideInput.action = false) }),
       bindHoldButton(this.steerLeft, { onPress: () => (this.touchSteer.left = true), onRelease: () => (this.touchSteer.left = false) }),
       bindHoldButton(this.steerRight, { onPress: () => (this.touchSteer.right = true), onRelease: () => (this.touchSteer.right = false) }),
+      bindHoldButton(this.steerUp, { onPress: () => (this.touchSteer.up = true), onRelease: () => (this.touchSteer.up = false) }),
+      bindHoldButton(this.steerDown, { onPress: () => (this.touchSteer.down = true), onRelease: () => (this.touchSteer.down = false) }),
       this.bindCameraDrag(),
       () => this.joystick.destroy(),
     ];
@@ -370,6 +383,7 @@ export class ParkGame {
       lastY = event.clientY;
       if (this.status === 'ride') {
         this.rideInput.lookDelta += dx * 0.006;
+        this.rideInput.lookDeltaY += dy * 0.004;
         return;
       }
       this.cameraYaw -= dx * 0.008;
@@ -476,9 +490,15 @@ export class ParkGame {
     }
     this.dragHold -= delta;
 
+    const feetBefore = player.y;
     player.vy -= GRAVITY * delta;
     player.y += player.vy * delta;
-    resolveCollisions(this.park.colliders, player, PLAYER_RADIUS);
+    // Para chocar y buscar el suelo se usan los pies de antes de caer: en cada cuadro la gravedad los
+    // hunde un poco y un escalón parecería una pared.
+    const body = { x: player.x, z: player.z, y: Math.max(player.y, feetBefore) };
+    resolveCollisions(this.park.colliders, body, PLAYER_RADIUS);
+    player.x = body.x;
+    player.z = body.z;
     this.crowd.bodies().forEach((body) => {
       const dx = player.x - body.x;
       const dz = player.z - body.z;
@@ -494,7 +514,7 @@ export class ParkGame {
       player.x *= PARK_RADIUS / fromCenter;
       player.z *= PARK_RADIUS / fromCenter;
     }
-    const ground = groundHeight(this.park.colliders, player.x, player.z, player.y);
+    const ground = groundHeight(this.park.colliders, player.x, player.z, body.y);
     if (player.y <= ground) {
       player.y = ground;
       player.vy = 0;
@@ -842,11 +862,12 @@ export class ParkGame {
       startedAt: performance.now(),
       stateTimer: 0,
     };
-    Object.assign(this.rideInput, { action: false, actionPressed: false, lookDelta: 0 });
+    Object.assign(this.rideInput, { action: false, actionPressed: false, lookDelta: 0, lookDeltaY: 0 });
     const { action, steer } = session.controls;
     this.actionButton.querySelector('.park-action__icon').textContent = action.icon;
     this.actionButton.querySelector('.park-action__label').textContent = action.label;
     this.stage.classList.toggle('has-steer', steer);
+    this.stage.classList.toggle('has-aim', Boolean(session.controls.aim));
     this.stage.classList.toggle('has-reticle', Boolean(session.reticle));
     this.setMode('ride');
     this.showBanner(`${ride.emoji} ${session.intro}`, 3200);
@@ -858,6 +879,8 @@ export class ParkGame {
     const { session } = this.rideRun;
     this.rideInput.left = this.keys.left || this.touchSteer.left;
     this.rideInput.right = this.keys.right || this.touchSteer.right;
+    this.rideInput.up = this.keys.forward || this.touchSteer.up;
+    this.rideInput.down = this.keys.back || this.touchSteer.down;
     session.update(delta, this.rideInput);
     if (this.friends && session.mateState && this.rideRun.mateIds.size) {
       this.rideRun.stateTimer -= delta;
@@ -868,6 +891,7 @@ export class ParkGame {
     }
     this.rideInput.actionPressed = false;
     this.rideInput.lookDelta = 0;
+    this.rideInput.lookDeltaY = 0;
     const status = session.status();
     if (this.rideStatus.textContent !== status) this.rideStatus.textContent = status;
     const prompt = session.prompt();
@@ -1151,7 +1175,7 @@ export class ParkGame {
     const ride = getRide(event.rideId);
     if (event.kind === 'ride' && ride) this.notify(`${ride.emoji} ${who} montó en ${ride.name}`);
     else if (event.kind === 'snitch') this.notify(`👮 ${who} le avisó al vigilante`);
-    else if (event.kind === 'bean') this.notify(`🌟 ${who} encontró un grano dorado`);
+    else if (event.kind === 'bean') this.notify(`${this.treasure.icon} ${who} encontró un tesoro dorado`);
     else if (event.kind === 'follow') this.notify(`🏃 ${who} dice: ¡Sígueme!`);
     if (SAYINGS[event.kind]?.emote) sounds.click();
     this.refreshFriends();

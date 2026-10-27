@@ -6,6 +6,9 @@ import { createChoconesRide } from './chocones.js';
 import { createCerditosRide } from './cerditos.js';
 import { createOrdenoRide } from './ordeno.js';
 import { createTractorRide } from './tractor.js';
+import { createGaleonRide } from './galeon.js';
+import { createLanchaRide } from './lancha.js';
+import { createBuceoRide } from './buceo.js';
 
 /**
  * Minijuego de cada atracción. Cada uno devuelve { camera, scene?, intro, controls, done, reticle?,
@@ -20,4 +23,7 @@ export const RIDE_FACTORIES = {
   cerditos: createCerditosRide,
   ordeno: createOrdenoRide,
   tractor: createTractorRide,
+  galeon: createGaleonRide,
+  lancha: createLanchaRide,
+  buceo: createBuceoRide,
 };

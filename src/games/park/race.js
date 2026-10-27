@@ -29,7 +29,7 @@ export const SAYINGS = {
   snitch: { text: '🚨 ¡Vigilante, se coló!' },
   fastpass: { text: '🎟️ ¡Pase rápido!' },
   ride: { text: '🎉 ¡Qué chévere!' },
-  bean: { text: '🌟 ¡Un grano dorado!' },
+  bean: { text: '🌟 ¡Un tesoro dorado!' },
   // Dentro de una atracción, para las amigas que van juntas.
   brave: { text: '⭐ ¡Valiente!' },
   early: { text: '🙈 ¡Muy pronto!' },
@@ -38,6 +38,10 @@ export const SAYINGS = {
   oink: { text: '🐷 ¡Corre, cerdito!' },
   win: { text: '🏆 ¡Gané!' },
   milk: { text: '🥛 ¡Leche!' },
+  egg: { text: '🥚 ¡Un huevo!' },
+  star: { text: '⭐ ¡Una estrella de mar!' },
+  boom: { text: '💥 ¡Le di!' },
+  pearl: { text: '🦪 ¡Una perla!' },
 };
 export const EMOTES = Object.keys(SAYINGS).filter((kind) => SAYINGS[kind].emote);
 

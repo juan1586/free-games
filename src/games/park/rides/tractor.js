@@ -28,6 +28,7 @@ const TRACTOR_THEME = {
     stat: 'Huevos',
     icon: '🥚',
     lines: ['¡Un huevo! 🥚', '¡Para el desayuno! 🍳', '¡Eso! 🙌'],
+    saying: 'egg',
   },
   puddle: { color: 0x6b4423, text: '🟤 ¡Barro!', stat: 'Barro', lines: ['¡Me embarré! 😆', '¡Uyyy, barro! 🐷'] },
   intro: 'Gira con ◀ ▶, recoge huevos 🥚 y pita 📯 a las gallinas',
