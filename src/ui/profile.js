@@ -7,9 +7,11 @@ import {
   editPlayer,
   getActivePlayer,
   getPlayers,
+  getStatsId,
   sanitizeName,
 } from '../core/player.js';
 import { sounds } from '../core/audio.js';
+import { trackEvent } from '../core/analytics.js';
 import { showModal } from './modal.js';
 
 /** Pantalla para crear un jugador nuevo o editar el activo (mode: 'create' | 'edit'). */
@@ -76,7 +78,10 @@ export function mountProfile(root, { mode }) {
     }
     sounds.coin();
     if (editing) editPlayer(editing.id, { name, avatar: selectedAvatar });
-    else createPlayer(name, selectedAvatar);
+    else {
+      createPlayer(name, selectedAvatar);
+      trackEvent('jugador-creado', 'Jugador nuevo creado');
+    }
     navigate('/');
   }
 
@@ -123,6 +128,7 @@ export function mountProfile(root, { mode }) {
         : null,
       el('button', { className: 'btn btn--primary btn--lg', text: editing ? 'Guardar' : '¡Listo!', attrs: { type: 'submit' } }),
     ]),
+    editing ? el('p', { className: 'profile__stats-id', text: `Jugador nº ${getStatsId()}` }) : null,
   ]);
 
   root.append(el('main', { className: 'page page--center' }, [form]));

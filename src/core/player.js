@@ -35,6 +35,11 @@ function generateId() {
   return `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Número al azar de 4 cifras que distingue al jugador en las estadísticas sin revelar su nombre. */
+function generateStatsId() {
+  return 1000 + Math.floor(Math.random() * 9000);
+}
+
 export function sanitizeName(rawName) {
   return String(rawName ?? '')
     .replace(/[\u0000-\u001f\u007f<>]/g, '')
@@ -61,6 +66,7 @@ export function createPlayer(name, avatar) {
   if (!cleanName) throw new Error('El nombre no puede estar vacío');
   const player = {
     id: generateId(),
+    statsId: generateStatsId(),
     name: cleanName,
     avatar: AVATARS.includes(avatar) ? avatar : AVATARS[0],
     games: createDefaultGames(),
@@ -69,6 +75,17 @@ export function createPlayer(name, avatar) {
   state.activePlayerId = player.id;
   persist();
   return player;
+}
+
+/** Número del jugador activo para las estadísticas (los perfiles antiguos lo reciben al vuelo). */
+export function getStatsId() {
+  const player = getActivePlayer();
+  if (!player) return null;
+  if (!player.statsId) {
+    player.statsId = generateStatsId();
+    persist();
+  }
+  return player.statsId;
 }
 
 export function editPlayer(id, { name, avatar }) {

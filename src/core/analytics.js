@@ -2,8 +2,12 @@
  * Estadísticas anónimas de uso con GoatCounter (sin cookies ni datos personales).
  * Solo se envían rutas (p. ej. /dino/jugar?mundo=1) y eventos con nombre fijo: nunca nombres
  * de jugador ni códigos de sala. Panel: https://jpg1586.goatcounter.com
+ * Para distinguir jugadores se manda su número al azar (`statsId`, p. ej. "jugador-4821") como
+ * referencia: en el panel aparece en "Referrers" al abrir cada ruta o evento.
  * Solo funciona en el sitio publicado (en `npm run dev` no se carga).
  */
+
+import { getStatsId } from './player.js';
 
 const ENDPOINT = 'https://jpg1586.goatcounter.com/count';
 const SCRIPT_URL = 'https://gc.zgo.at/count.js';
@@ -15,6 +19,8 @@ const isReady = () => typeof window.goatcounter?.count === 'function';
 
 function count(vars) {
   if (!import.meta.env.PROD) return;
+  const statsId = getStatsId();
+  vars = { ...vars, referrer: statsId ? `jugador-${statsId}` : 'sin-jugador' };
   if (isReady()) window.goatcounter.count(vars);
   else pending.push(vars);
 }

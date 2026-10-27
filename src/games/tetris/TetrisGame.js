@@ -6,6 +6,7 @@ import { getGameData, updateGameData } from '../../core/player.js';
 import { createBanner, createGameHeader } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
+import { trackEvent } from '../../core/analytics.js';
 import { LINES_PER_LEVEL, TETRIS_WORLDS, calculateStars, getFallInterval } from './levels.js';
 
 const COLS = 10;
@@ -521,6 +522,7 @@ export class TetrisGame {
     });
     this.best = Math.max(this.best, this.score);
     this.updateHud();
+    trackEvent(`tetris-mundo-${this.worldIndex + 1}-superado-${stars}-estrellas`, `Bloques · ${this.world.name} superado (${stars} ⭐)`);
 
     const nextWorld = TETRIS_WORLDS[this.worldIndex + 1];
     showModal({
@@ -559,6 +561,7 @@ export class TetrisGame {
     if (isNewRecord) sounds.levelUp();
     else sounds.gameOver();
     this.updateHud();
+    if (!this.goalReached) trackEvent(`tetris-mundo-${this.worldIndex + 1}-tablero-lleno`, `Bloques · tablero lleno en ${this.world.name}`);
 
     showModal({
       emoji: this.goalReached ? '🏆' : isNewRecord ? '🌟' : '🧱',

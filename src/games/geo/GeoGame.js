@@ -8,6 +8,7 @@ import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
 import { getSession, leaveRoom } from '../../core/race.js';
 import { RaceMatch } from '../../core/raceMatch.js';
+import { trackEvent } from '../../core/analytics.js';
 import { formatRaceTime, placeLabel, showRaceEnded, showRacePodium } from '../../ui/raceResults.js';
 import {
   CEILING_Y,
@@ -66,6 +67,9 @@ const random = (min, max) => min + Math.random() * (max - min);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const wrap = (value, span) => ((value % span) + span) % span;
+
+// Intentos de un mismo nivel que se cuentan en las estadísticas, para ver dónde se atascan.
+const STUCK_ATTEMPTS = [10, 25, 50];
 
 const createLevelProgress = () => ({ best: 0, attempts: 0, completed: false, practiceCompleted: false, coins: [false, false, false] });
 
@@ -453,6 +457,9 @@ export class GeoGame {
       this.saveLevel({ best: this.best, attempts: progress.attempts + 1 });
       this.flushTotals({ attempts: 1 });
       if (isNewBest && percent >= 10) this.showBanner(`🏆 ¡Nuevo récord: ${percent}%!`, 1300);
+      if (!this.practice && STUCK_ATTEMPTS.includes(this.attempts)) {
+        trackEvent(`geo-nivel-${this.definition.label}-intentos-${this.attempts}`, `Geo · nivel ${this.definition.label}: ${this.attempts} intentos sin pasarlo`);
+      }
     }
     this.announceAchievements(findNewAchievements(getGameData('geo')));
 
@@ -488,9 +495,12 @@ export class GeoGame {
     const nextIndex = this.levelIndex + 1;
     const nextLevel = GEO_LEVELS[nextIndex];
     const unlocksNext = !this.practice && nextLevel && data.unlockedLevel < nextIndex;
+    const { label } = this.definition;
     if (this.practice) {
       this.saveLevel({ practiceCompleted: true });
+      trackEvent(`geo-nivel-${label}-practica-completada`, `Geo · nivel ${label} completado en práctica`);
     } else {
+      trackEvent(`geo-nivel-${label}-completado-${this.speed.id}`, `Geo · nivel ${label} completado (${this.speed.label})`);
       this.best = 100;
       this.saveLevel({ best: 100, completed: true, attempts: this.levelProgress().attempts + 1 });
       if (unlocksNext) updateGameData('geo', { unlockedLevel: nextIndex });
@@ -793,6 +803,7 @@ export class GeoGame {
     if (!achievements.length) return;
     const data = getGameData('geo');
     updateGameData('geo', { achievements: [...data.achievements, ...achievements.map((achievement) => achievement.id)] });
+    achievements.forEach(({ id, title }) => trackEvent(`geo-reto-${id}`, `Geo · reto: ${title}`));
     sounds.achievement();
   }
 

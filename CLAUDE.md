@@ -46,7 +46,7 @@ scripts/           check-geo-levels.mjs
 - Juegos con canvas a resolución lógica fija vía `setupCanvas`; bucle con `createGameLoop`; pausa con `P`/`Escape` y al ocultar la pestaña.
 - Controles: teclado por `event.code` con `bindKeyboard`; táctil con `bindHoldButton` (botones en `.touch-controls`, visibles solo en pantallas táctiles).
 - Sonidos y música se generan en `core/audio.js` (sin archivos de audio). Respetar `isMuted()`.
-- Estadísticas (`core/analytics.js`, GoatCounter, solo en producción): el router cuenta cada pantalla con `trackPage`; los hitos se cuentan con `trackEvent`. **Nunca enviar nombres de jugador, códigos de sala ni otros datos personales**, solo rutas y nombres de evento fijos.
+- Estadísticas (`core/analytics.js`, GoatCounter, solo en producción): el router cuenta cada pantalla con `trackPage`; los hitos se cuentan con `trackEvent`. **Nunca enviar nombres de jugador, códigos de sala ni otros datos personales**, solo rutas y nombres de evento fijos. Para distinguir jugadores se envía su `statsId` (número al azar de 4 cifras, visible en «Editar jugador») como referrer `jugador-NNNN`.
 - Turbo: en Dino y Salto Geométrico, mantener `Shift` o el botón ⚡.
 
 ## Salto Geométrico (detalles importantes)

@@ -40,6 +40,12 @@
   gap: 12px;
 }
 
+.profile__stats-id {
+  font-size: var(--fs-sm);
+  text-align: center;
+  opacity: 0.6;
+}
+
 .avatar-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));

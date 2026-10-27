@@ -9,6 +9,7 @@ import { el, navigate } from '../../ui/dom.js';
 import { getSession, leaveRoom } from '../../core/race.js';
 import { RaceMatch } from '../../core/raceMatch.js';
 import { createRandom } from '../../core/random.js';
+import { trackEvent } from '../../core/analytics.js';
 import { formatRaceTime, placeLabel, showRaceEnded, showRacePodium } from '../../ui/raceResults.js';
 import { DINO_SIZE, drawDino, getDino } from './dinos.js';
 import { DINO_WORLDS, OBSTACLE_SIZES, drawObstacle } from './worlds.js';
@@ -419,6 +420,7 @@ export class DinoGame {
     const data = getGameData('dino');
     const nextWorld = Math.min(this.worldIndex + 1, DINO_WORLDS.length - 1);
     updateGameData('dino', { unlockedWorld: Math.max(data.unlockedWorld, nextWorld) });
+    trackEvent(`dino-mundo-${this.worldIndex + 1}-superado`, `Dino · ${this.world.name} superado`);
     sounds.win();
     const isLastWorld = this.worldIndex === DINO_WORLDS.length - 1;
     this.showBanner(isLastWorld ? '🏆 ¡Completaste todos los mundos!' : `🎉 ¡Desbloqueaste ${DINO_WORLDS[nextWorld].name}!`, 2600);
@@ -432,6 +434,7 @@ export class DinoGame {
     this.spawnSparkles(DINO_X + 30, GROUND_Y - this.player.height - 30, '#ff5f5f', 14);
     const isNewRecord = this.saveProgress();
     this.updateHud();
+    if (!this.race && !this.worldCleared) this.trackCrash();
 
     this.gameOverTimer = setTimeout(() => {
       this.loop.stop();
@@ -461,6 +464,13 @@ export class DinoGame {
         ].filter(Boolean),
       });
     }, GAME_OVER_DELAY_MS);
+  }
+
+  /** Cuenta en qué tramo del mundo chocó (0-25 %, 25-50 %…), para ver dónde se atascan. */
+  trackCrash() {
+    const from = Math.min(3, Math.floor((this.meters / this.world.goal) * 4)) * 25;
+    const range = `${from}-${from + 25}`;
+    trackEvent(`dino-mundo-${this.worldIndex + 1}-choque-${range}`, `Dino · choque en ${this.world.name} (${range} % del camino)`);
   }
 
   /** Guarda monedas y récord una sola vez por partida. Devuelve true si hubo récord nuevo. */
