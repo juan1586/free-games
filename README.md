@@ -4,6 +4,7 @@ Sitio de juegos para niñas y niños, sin anuncios ni servidor. Todo se guarda e
 
 - **🦖 Dino Corre** — elige entre 5 dinosaurios, ponle nombre y corre por 5 mundos (Desierto, Selva, Nieve, Volcán y Espacio). Llega a la meta de distancia para desbloquear el siguiente mundo. Monedas, día/noche y velocidad creciente.
 - **🧱 Bloques Mágicos** — Tetris con 5 mundos temáticos (Arcoíris, Océano, Caramelos, Galaxia y Bosque Mágico). Cada mundo tiene una meta de líneas y da hasta 3 estrellas según los puntos. Pieza fantasma, pieza guardada y vista de las siguientes.
+- **🔷 Salto Geométrico** — inspirado en Geometry Dash: una figura avanza sola y tú saltas al ritmo de la música. Portales que la convierten en cohete, pelota (cambia la gravedad) o avión de papel. 5 mundos × 3 niveles diseñados a mano, 3 monedas escondidas por nivel, modo práctica con banderas, vestidor (figuras, colores, estelas y caritas que se desbloquean con estrellas) y 12 retos.
 - **👧 Varios jugadores** en el mismo navegador, cada uno con su avatar, récords y mundos desbloqueados.
 
 ## Controles
@@ -11,6 +12,7 @@ Sitio de juegos para niñas y niños, sin anuncios ni servidor. Todo se guarda e
 | Juego | Teclado | Pantalla táctil |
 | --- | --- | --- |
 | Dino | `Espacio` / `↑` saltar · `↓` agacharse (en el aire, cae rápido) · `P` pausa | Tocar = saltar · deslizar abajo = agacharse · botones en pantalla |
+| Salto Geométrico | `Espacio` / `↑` / clic saltar (mantener = cohete sube / saltar seguido) · `P` pausa | Tocar o mantener la pantalla · botón en pantalla |
 | Bloques | `←` `→` mover · `↑` / `X` girar · `Z` girar al revés · `↓` bajar · `Espacio` soltar · `C` guardar · `P` pausa | Tocar = girar · deslizar = mover / soltar · botones en pantalla |
 
 ## Desarrollo
@@ -28,11 +30,12 @@ Estructura:
 
 ```
 src/
-  main.js            # router por hash (#/, #/dino, #/tetris, #/perfil)
+  main.js            # router por hash (#/, #/dino, #/tetris, #/geo, #/perfil)
   core/              # storage, perfiles, entrada, audio WebAudio, bucle de juego
   ui/                # menú, perfil, cabecera/HUD, modales
   games/dino/        # juego, tipos de dino, mundos, pantalla de selección
   games/tetris/      # juego, mundos/niveles, pantalla de selección
+  games/geo/         # física (sin DOM), niveles, figuras, obstáculos, retos, juego y pantalla de selección
   styles/            # tokens de diseño y hojas de estilo
 ```
 

@@ -27,6 +27,9 @@ const TRAIL_SECONDS = 0.35;
 const TRAIL_SPAWN_SECONDS = 0.045;
 const DECOR_SPAN = 1200;
 const COINS_PER_LEVEL = 3;
+const WIN_FLY_UP_SPEED = 160;
+// Evita que el redondeo de coma flotante dé 3 o 5 pasos de física por fotograma en lugar de 4.
+const STEP_EPSILON = 1e-9;
 
 const random = (min, max) => min + Math.random() * (max - min);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -141,7 +144,6 @@ export class GeoGame {
       this.status = 'running';
       this.hint.hidden = true;
       this.music.start();
-      this.held = true;
       return;
     }
     if (this.status !== 'running') return;
@@ -222,7 +224,7 @@ export class GeoGame {
 
     if (this.status === 'running') {
       this.accumulator += delta;
-      while (this.accumulator >= STEP_SECONDS && this.status === 'running') {
+      while (this.accumulator >= STEP_SECONDS - STEP_EPSILON && this.status === 'running') {
         this.accumulator -= STEP_SECONDS;
         const events = step(this.state, this.level, { held: this.held, pressed: this.pressQueued }, STEP_SECONDS);
         this.pressQueued = false;
@@ -234,6 +236,7 @@ export class GeoGame {
       }
       this.updateHud();
     }
+    if (this.status === 'won') this.flyAway(delta);
     this.updatePose(delta);
   }
 
@@ -340,6 +343,7 @@ export class GeoGame {
 
   win() {
     this.status = 'won';
+    this.winCameraX = this.state.x - PLAYER_SCREEN_X;
     this.music.stop();
     sounds.win();
     this.spawnConfetti();
@@ -368,7 +372,9 @@ export class GeoGame {
   }
 
   achievementLines(achievements) {
-    return achievements.map((achievement) => `🏅 Reto: ${achievement.icon} ${achievement.title}`).join(' · ');
+    if (!achievements.length) return '';
+    const titles = achievements.map((achievement) => `${achievement.icon} ${achievement.title}`).join(', ');
+    return `🏅 ${achievements.length === 1 ? 'Nuevo reto' : 'Nuevos retos'}: ${titles}.`;
   }
 
   showWin({ nextLevel, unlocksNext, achievements }) {
@@ -456,6 +462,14 @@ export class GeoGame {
   }
 
   // ---------- Pose, estela y partículas ----------
+
+  /** Tras cruzar la meta la figura sigue de largo y sale volando de la pantalla. */
+  flyAway(delta) {
+    this.state.x += this.level.speed * 1.3 * delta;
+    this.state.y += WIN_FLY_UP_SPEED * delta;
+    this.state.onGround = false;
+    this.updateTrail(delta);
+  }
 
   playerCenter() {
     return { x: this.state.x + PLAYER_SIZE / 2, y: this.state.y + PLAYER_SIZE / 2 };
@@ -588,7 +602,8 @@ export class GeoGame {
   // ---------- Dibujo ----------
 
   get view() {
-    return { x: this.state.x - PLAYER_SCREEN_X, y: this.cameraY, floor: FLOOR_Y };
+    const cameraX = this.status === 'won' ? this.winCameraX : this.state.x - PLAYER_SCREEN_X;
+    return { x: cameraX, y: this.cameraY, floor: FLOOR_Y };
   }
 
   /** Pulso que late con la música para que el fondo "baile". */
