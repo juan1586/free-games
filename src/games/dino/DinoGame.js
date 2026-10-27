@@ -3,7 +3,7 @@ import { setupCanvas } from '../../core/canvas.js';
 import { bindHoldButton, bindKeyboard, bindTouchGestures } from '../../core/input.js';
 import { sounds } from '../../core/audio.js';
 import { getGameData, sanitizeName, updateGameData } from '../../core/player.js';
-import { createBanner, createGameHeader } from '../../ui/hud.js';
+import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
 import { DINO_SIZE, drawDino, getDino } from './dinos.js';
@@ -91,12 +91,12 @@ export class DinoGame {
     const stage = el('div', { className: `stage stage--dino world--${this.world.id}` }, [this.canvas, this.hint]);
     this.showBanner = createBanner(stage);
 
-    this.jumpButton = el('button', { className: 'touch-btn touch-btn--jump', text: '⬆️ Saltar', attrs: { type: 'button' } });
-    this.duckButton = el('button', { className: 'touch-btn touch-btn--duck', text: '⬇️ Agachar', attrs: { type: 'button' } });
-    this.turboButton = el('button', { className: 'touch-btn touch-btn--turbo', text: '⚡ Turbo', attrs: { type: 'button' } });
+    this.jumpButton = createTouchButton({ icon: '⬆️', label: 'Saltar', variant: 'jump' });
+    this.duckButton = createTouchButton({ icon: '⬇️', label: 'Agachar', variant: 'duck' });
+    this.turboButton = createTouchButton({ icon: '⚡', label: 'Turbo', variant: 'turbo' });
     const touchControls = el('div', { className: 'touch-controls touch-controls--dino' }, [this.duckButton, this.turboButton, this.jumpButton]);
 
-    root.append(el('main', { className: 'page game-page' }, [this.header.element, stage, touchControls]));
+    root.append(el('main', { className: 'page game-page game-page--side-controls' }, [this.header.element, stage, touchControls]));
   }
 
   bindControls() {

@@ -87,3 +87,11 @@ export function createBanner(container) {
     timer = setTimeout(() => banner.classList.remove('is-visible'), durationMs);
   };
 }
+
+/** Botón táctil con icono y texto (en horizontal el icono va arriba y el texto abajo). */
+export function createTouchButton({ icon, label, variant }) {
+  return el('button', { className: `touch-btn touch-btn--${variant}`, attrs: { type: 'button', 'aria-label': label } }, [
+    el('span', { className: 'touch-btn__icon', text: icon, attrs: { 'aria-hidden': 'true' } }),
+    el('span', { className: 'touch-btn__label', text: label }),
+  ]);
+}

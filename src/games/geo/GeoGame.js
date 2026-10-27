@@ -3,7 +3,7 @@ import { setupCanvas } from '../../core/canvas.js';
 import { bindHoldButton, bindKeyboard } from '../../core/input.js';
 import { createMusicLoop, sounds } from '../../core/audio.js';
 import { getGameData, updateGameData } from '../../core/player.js';
-import { createBanner, createGameHeader } from '../../ui/hud.js';
+import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
 import {
@@ -24,7 +24,13 @@ import { PORTAL_STYLES, drawFinish, drawObjects } from './obstacles.js';
 import { RAINBOW, drawPlayer, resolveSkin } from './shapes.js';
 import { findNewAchievements } from './achievements.js';
 
-const VIEW_WIDTH = 800;
+/** El alto lógico es fijo; el ancho se adapta a la pantalla (más ancho en celular horizontal). */
+const MIN_VIEW_WIDTH = 800;
+const MAX_VIEW_WIDTH = 1200;
+const MIN_DISPLAY_HEIGHT = 180;
+const STAGE_BOTTOM_MARGIN = 14;
+const CONTROLS_GAP = 14;
+const REFIT_AFTER_ROTATION_MS = 300;
 const VIEW_HEIGHT = 400;
 const FLOOR_Y = 340;
 const PLAYER_SCREEN_X = 220;
@@ -37,7 +43,7 @@ const CHECKPOINT_EVERY_SECONDS = 1.6;
 const PRACTICE_TIP_AFTER_ATTEMPTS = 6;
 const TRAIL_SECONDS = 0.35;
 const TRAIL_SPAWN_SECONDS = 0.045;
-const DECOR_SPAN = 1200;
+const DECOR_SPAN = MAX_VIEW_WIDTH + 400;
 const COINS_PER_LEVEL = 3;
 const WIN_FLY_UP_SPEED = 160;
 const SPEED_LINE_COUNT = 14;
@@ -73,7 +79,7 @@ export class GeoGame {
     this.practiceTipShown = false;
 
     this.buildDom(root);
-    this.ctx = setupCanvas(this.canvas, VIEW_WIDTH, VIEW_HEIGHT);
+    this.fitCanvas();
     this.decor = Array.from({ length: 16 }, () => ({
       x: random(0, DECOR_SPAN),
       y: random(30, 270),
@@ -84,7 +90,7 @@ export class GeoGame {
     }));
     this.musicBpm = Math.round(this.world.music.bpm * this.speed.factor);
     this.music = createMusicLoop({ ...this.world.music, bpm: this.musicBpm });
-    this.speedLines = Array.from({ length: SPEED_LINE_COUNT }, () => ({ x: random(0, VIEW_WIDTH), y: random(20, FLOOR_Y - 10), length: random(40, 110) }));
+    this.speedLines = Array.from({ length: SPEED_LINE_COUNT }, () => ({ x: random(0, MAX_VIEW_WIDTH), y: random(20, FLOOR_Y - 10), length: random(40, 110) }));
     this.showBanner = createBanner(this.stage);
 
     this.loop = createGameLoop({
@@ -118,7 +124,7 @@ export class GeoGame {
 
     this.canvas = el('canvas', {
       className: 'stage__canvas stage__canvas--geo',
-      attrs: { width: VIEW_WIDTH, height: VIEW_HEIGHT, 'aria-label': 'Juego Salto Geométrico' },
+      attrs: { width: MIN_VIEW_WIDTH, height: VIEW_HEIGHT, 'aria-label': 'Juego Salto Geométrico' },
     });
     this.hint = el('div', { className: 'stage__hint' }, [
       el('strong', { text: '¡Toca o pulsa Espacio para empezar!' }),
@@ -130,11 +136,18 @@ export class GeoGame {
     ]);
     this.stage = el('div', { className: `stage stage--geo geo-world--${this.world.id}` }, [this.canvas, this.hint]);
 
-    this.jumpButton = el('button', { className: 'touch-btn touch-btn--jump', text: '⬆️ Saltar', attrs: { type: 'button' } });
-    this.turboButton = el('button', { className: 'touch-btn touch-btn--turbo', text: '⚡ Turbo', attrs: { type: 'button' } });
-    const touchControls = el('div', { className: 'touch-controls touch-controls--geo' }, [this.turboButton, this.jumpButton]);
+    this.jumpButton = createTouchButton({ icon: '⬆️', label: 'Saltar', variant: 'jump' });
+    this.turboButton = createTouchButton({ icon: '⚡', label: 'Turbo', variant: 'turbo' });
+    this.touchControls = el('div', { className: 'touch-controls touch-controls--geo' }, [this.turboButton, this.jumpButton]);
 
-    root.append(el('main', { className: 'page game-page' }, [this.header.element, this.stage, touchControls]));
+    this.page = el('main', { className: 'page game-page game-page--geo game-page--side-controls' }, [
+      this.header.element,
+      this.stage,
+      this.touchControls,
+    ]);
+    // La animación de entrada desplaza la página unos píxeles: se vuelve a medir al terminar.
+    this.page.addEventListener('animationend', (event) => event.target === this.page && this.fitCanvas());
+    root.append(this.page);
   }
 
   bindControls() {
@@ -144,6 +157,13 @@ export class GeoGame {
       this.setTurbo(false);
     };
     window.addEventListener('blur', handleBlur);
+    const handleResize = () => {
+      this.fitCanvas();
+      clearTimeout(this.refitTimer);
+      // Algunos móviles actualizan el alto de la ventana un poco después de girar.
+      this.refitTimer = setTimeout(() => this.fitCanvas(), REFIT_AFTER_ROTATION_MS);
+    };
+    window.addEventListener('resize', handleResize);
 
     return [
       bindKeyboard(
@@ -165,7 +185,36 @@ export class GeoGame {
       bindHoldButton(this.jumpButton, { onPress: () => this.press(), onRelease: release }),
       bindHoldButton(this.turboButton, { onPress: () => this.setTurbo(true), onRelease: () => this.setTurbo(false) }),
       () => window.removeEventListener('blur', handleBlur),
+      () => {
+        window.removeEventListener('resize', handleResize);
+        clearTimeout(this.refitTimer);
+      },
     ];
+  }
+
+  /**
+   * Ajusta el ancho lógico del lienzo al espacio disponible: el juego ocupa todo el ancho
+   * y, si la pantalla es baja (celular en horizontal), se ve más nivel por delante en vez de encogerse.
+   */
+  fitCanvas() {
+    const width = this.stage.clientWidth;
+    let viewWidth = MIN_VIEW_WIDTH;
+    if (width > 0) {
+      // El juego empieza justo debajo de la cabecera (también cuando los botones van a los lados).
+      const rowGap = parseFloat(getComputedStyle(this.page).rowGap) || 0;
+      const stageTop = this.header.element.getBoundingClientRect().bottom + window.scrollY + rowGap;
+      const controlsDisplay = getComputedStyle(this.touchControls).display;
+      const controlsBelow = controlsDisplay !== 'none' && controlsDisplay !== 'contents';
+      const reserved = controlsBelow ? this.touchControls.offsetHeight + CONTROLS_GAP : 0;
+      const available = window.innerHeight - stageTop - reserved - STAGE_BOTTOM_MARGIN;
+      const displayHeight = Math.min(width / 2, Math.max(available, MIN_DISPLAY_HEIGHT));
+      viewWidth = clamp(Math.round((VIEW_HEIGHT * width) / displayHeight), MIN_VIEW_WIDTH, MAX_VIEW_WIDTH);
+    }
+    if (viewWidth === this.viewWidth) return;
+    this.viewWidth = viewWidth;
+    this.canvas.style.aspectRatio = `${viewWidth} / ${VIEW_HEIGHT}`;
+    this.ctx = setupCanvas(this.canvas, viewWidth, VIEW_HEIGHT);
+    if (this.state) this.render();
   }
 
   press() {
@@ -612,7 +661,7 @@ export class GeoGame {
   spawnConfetti() {
     for (let i = 0; i < 80; i += 1) {
       this.confetti.push({
-        x: random(0, VIEW_WIDTH),
+        x: random(0, this.viewWidth),
         y: random(-140, -10),
         vx: random(-40, 40),
         vy: random(80, 190),
@@ -676,7 +725,7 @@ export class GeoGame {
       time: this.time,
       used: this.state.used,
       savedCoins: this.practice ? [] : this.savedCoins,
-      viewWidth: VIEW_WIDTH,
+      viewWidth: this.viewWidth,
     });
     drawFinish(ctx, this.level.endX, view, VIEW_HEIGHT);
     this.drawCheckpoints(view);
@@ -697,7 +746,7 @@ export class GeoGame {
     sky.addColorStop(0, this.palette.skyTop);
     sky.addColorStop(1, this.palette.skyBottom);
     ctx.fillStyle = sky;
-    ctx.fillRect(-10, -10, VIEW_WIDTH + 20, VIEW_HEIGHT + 20);
+    ctx.fillRect(-10, -10, this.viewWidth + 20, VIEW_HEIGHT + 20);
   }
 
   drawDecor(view) {
@@ -772,12 +821,12 @@ export class GeoGame {
     const ceilingY = view.floor - (CEILING_Y - view.y);
     ctx.globalAlpha = this.ceilingAlpha;
     ctx.fillStyle = this.palette.ground;
-    ctx.fillRect(0, -10, VIEW_WIDTH, ceilingY + 10);
+    ctx.fillRect(0, -10, this.viewWidth, ceilingY + 10);
     ctx.fillStyle = this.palette.groundDark;
     const offset = wrap(view.x, 80);
-    for (let x = -offset; x < VIEW_WIDTH; x += 80) ctx.fillRect(x, -10, 40, ceilingY + 10);
+    for (let x = -offset; x < this.viewWidth; x += 80) ctx.fillRect(x, -10, 40, ceilingY + 10);
     ctx.fillStyle = this.palette.line;
-    ctx.fillRect(0, ceilingY - 4, VIEW_WIDTH, 4);
+    ctx.fillRect(0, ceilingY - 4, this.viewWidth, 4);
     ctx.globalAlpha = 1;
   }
 
@@ -786,18 +835,18 @@ export class GeoGame {
     const groundY = view.floor + view.y;
     if (groundY > VIEW_HEIGHT) return;
     ctx.fillStyle = this.palette.ground;
-    ctx.fillRect(-10, groundY, VIEW_WIDTH + 20, VIEW_HEIGHT - groundY + 10);
+    ctx.fillRect(-10, groundY, this.viewWidth + 20, VIEW_HEIGHT - groundY + 10);
     ctx.fillStyle = this.palette.groundDark;
     const offset = wrap(view.x, 80);
-    for (let x = -offset; x < VIEW_WIDTH; x += 80) ctx.fillRect(x, groundY, 40, VIEW_HEIGHT - groundY + 10);
+    for (let x = -offset; x < this.viewWidth; x += 80) ctx.fillRect(x, groundY, 40, VIEW_HEIGHT - groundY + 10);
     if (this.palette.rainbow) {
-      const stripe = ctx.createLinearGradient(0, 0, VIEW_WIDTH, 0);
+      const stripe = ctx.createLinearGradient(0, 0, this.viewWidth, 0);
       RAINBOW.forEach((color, index) => stripe.addColorStop(index / (RAINBOW.length - 1), color));
       ctx.fillStyle = stripe;
     } else {
       ctx.fillStyle = this.palette.line;
     }
-    ctx.fillRect(-10, groundY, VIEW_WIDTH + 20, 5);
+    ctx.fillRect(-10, groundY, this.viewWidth + 20, 5);
   }
 
   drawCheckpoints(view) {
@@ -806,7 +855,7 @@ export class GeoGame {
     this.checkpoints.forEach((checkpoint) => {
       const x = checkpoint.x + PLAYER_SIZE / 2 - view.x;
       const y = view.floor - (checkpoint.y + PLAYER_SIZE / 2 - view.y);
-      if (x < -20 || x > VIEW_WIDTH + 20) return;
+      if (x < -20 || x > this.viewWidth + 20) return;
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(Math.PI / 4);
@@ -918,7 +967,7 @@ export class GeoGame {
     ctx.lineCap = 'round';
     ctx.beginPath();
     this.speedLines.forEach((line) => {
-      const x = VIEW_WIDTH - wrap(line.x + shift, VIEW_WIDTH + line.length);
+      const x = this.viewWidth - wrap(line.x + shift, this.viewWidth + line.length);
       ctx.moveTo(x, line.y);
       ctx.lineTo(x + line.length, line.y);
     });
@@ -937,7 +986,7 @@ export class GeoGame {
     const ctx = this.ctx;
     ctx.globalAlpha = (this.flash.life / 0.35) * 0.35;
     ctx.fillStyle = this.flash.color;
-    ctx.fillRect(-10, -10, VIEW_WIDTH + 20, VIEW_HEIGHT + 20);
+    ctx.fillRect(-10, -10, this.viewWidth + 20, VIEW_HEIGHT + 20);
     ctx.globalAlpha = 1;
   }
 
@@ -956,7 +1005,7 @@ export class GeoGame {
   drawProgress() {
     const ctx = this.ctx;
     const trackWidth = 320;
-    const trackX = (VIEW_WIDTH - trackWidth) / 2;
+    const trackX = (this.viewWidth - trackWidth) / 2;
     const trackY = 14;
     const progress = progressOf(this.state, this.level);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
