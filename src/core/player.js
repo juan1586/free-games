@@ -33,6 +33,7 @@ const createDefaultGames = () => ({
     racesPlayed: 0,
     raceWins: 0,
   },
+  album: { stickers: [], fresh: [], lastChest: '', chestsOpened: 0 },
 });
 
 let state = loadState(DEFAULT_STATE);

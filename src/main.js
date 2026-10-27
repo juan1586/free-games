@@ -18,6 +18,8 @@ import { mountGeoGame } from './games/geo/GeoGame.js';
 import { mountGeoRaceLobby } from './games/geo/raceLobby.js';
 import { getSession, isConnected } from './core/race.js';
 import { trackPage } from './core/analytics.js';
+import { mountAlbum } from './album/album.js';
+import { syncStickers } from './album/stickers.js';
 
 const app = document.getElementById('app');
 
@@ -48,6 +50,7 @@ const ROUTES = {
     }
     return mountDinoGame(app, { worldIndex: parseWorld(query), race });
   },
+  '/album': () => mountAlbum(app),
   '/tetris': () => mountTetrisSetup(app),
   '/tetris/jugar': (query) => mountTetrisGame(app, { worldIndex: parseWorld(query) }),
   '/geo': () => mountGeoSetup(app),
@@ -70,6 +73,7 @@ const PAGE_TITLES = {
   '/dino': 'Dino Corre',
   '/dino/carrera': 'Dino · sala de carrera',
   '/dino/jugar': 'Dino · jugando',
+  '/album': 'Álbum de pegatinas',
   '/tetris': 'Bloques Mágicos',
   '/tetris/jugar': 'Bloques · jugando',
   '/geo': 'Salto Geométrico',
@@ -88,6 +92,7 @@ function trackRoute(path, query) {
 
 let cleanupCurrentView = null;
 let currentPath = null;
+let isRendering = false;
 
 function parseHash() {
   const raw = window.location.hash.replace(/^#/, '') || '/';
@@ -112,6 +117,11 @@ function render() {
     return;
   }
 
+  isRendering = true;
+  // Al cambiar de pantalla se revisa si lo jugado ya da pegatinas nuevas.
+  syncStickers();
+  isRendering = false;
+
   closeModal();
   cleanupCurrentView?.();
   cleanupCurrentView = null;
@@ -127,7 +137,7 @@ function render() {
 
 // El menú refleja al instante el cambio de jugador activo.
 onPlayersChange(() => {
-  if (currentPath === '/') render();
+  if (currentPath === '/' && !isRendering) render();
 });
 
 window.addEventListener('hashchange', render);

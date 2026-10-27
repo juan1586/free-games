@@ -1,9 +1,12 @@
 import { el, navigate } from './dom.js';
 import { getActivePlayer, getGameData, getPlayers, isMuted, setActivePlayer, setMuted } from '../core/player.js';
 import { sounds } from '../core/audio.js';
+import { showModal } from './modal.js';
+import { STICKERS, canOpenChest, openChest } from '../album/stickers.js';
+import { trackEvent } from '../core/analytics.js';
 import { DINO_WORLDS } from '../games/dino/worlds.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
-import { GEO_LEVELS } from '../games/geo/levels.js';
+import { GEO_WORLDS, MAIN_LEVELS } from '../games/geo/levels.js';
 import { ACHIEVEMENTS, MAX_STARS, countCompleted, countStars as countGeoStars } from '../games/geo/achievements.js';
 
 function countStars(starsByWorld) {
@@ -38,6 +41,65 @@ function renderPlayerSwitcher() {
       on: { click: () => navigate('/perfil') },
     }),
   ]);
+}
+
+const CHEST_OPEN_MS = 900;
+
+/** Álbum de pegatinas y cofre sorpresa del día. */
+function renderTreasureBar() {
+  const album = getGameData('album');
+  const freshCount = album.fresh.length;
+  const albumLink = el('a', { className: 'treasure-btn treasure-btn--album', attrs: { href: '#/album' }, on: { click: () => sounds.click() } }, [
+    el('span', { className: 'treasure-btn__icon', text: '📒', attrs: { 'aria-hidden': 'true' } }),
+    el('span', {}, [
+      el('strong', { text: 'Mi álbum' }),
+      el('small', { text: `${album.stickers.length}/${STICKERS.length} pegatinas` }),
+    ]),
+    freshCount ? el('span', { className: 'treasure-btn__badge', text: `¡${freshCount} ${freshCount === 1 ? 'nueva' : 'nuevas'}!` }) : null,
+  ].filter(Boolean));
+
+  const isReady = canOpenChest();
+  const chestIcon = el('span', { className: 'treasure-btn__icon', text: '🎁', attrs: { 'aria-hidden': 'true' } });
+  const chestButton = el(
+    'button',
+    {
+      className: `treasure-btn treasure-btn--chest ${isReady ? 'is-ready' : ''}`,
+      attrs: { type: 'button', disabled: !isReady },
+      on: { click: () => openDailyChest() },
+    },
+    [
+      chestIcon,
+      el('span', {}, [
+        el('strong', { text: 'Cofre del día' }),
+        el('small', { text: isReady ? '¡Ábrelo!' : 'Vuelve mañana 🌙' }),
+      ]),
+    ],
+  );
+
+  function openDailyChest() {
+    if (!canOpenChest() || chestButton.classList.contains('is-opening')) return;
+    sounds.click();
+    chestButton.classList.add('is-opening');
+    setTimeout(() => {
+      const reward = openChest();
+      trackEvent('cofre-abierto', 'Cofre del día abierto');
+      sounds.achievement();
+      showModal({
+        emoji: reward.sticker ? reward.sticker.icon : '🪙',
+        title: '¡Sorpresa!',
+        message: reward.sticker
+          ? `¡Una pegatina nueva para tu álbum: ${reward.sticker.name}!`
+          : `¡${reward.coins} monedas para gastar en la tienda de Dino!`,
+        tone: 'success',
+        actions: [
+          reward.sticker ? { label: 'Ver mi álbum 📒', variant: 'primary', onClick: () => navigate('/album') } : null,
+          { label: '¡Genial!', variant: reward.sticker ? 'secondary' : 'primary' },
+        ].filter(Boolean),
+      });
+    }, CHEST_OPEN_MS);
+  }
+
+  return el('section', { className: 'treasure-bar', attrs: { 'aria-label': 'Premios' } }, [albumLink, chestButton]);
 }
 
 function renderGameCard({ path, title, tagline, art, theme, records }) {
@@ -131,7 +193,7 @@ export function mountMenu(root) {
     renderGameCard({
       path: '/dino',
       title: 'Dino Corre',
-      tagline: 'Elige tu dinosaurio y corre por 5 mundos.',
+      tagline: `Elige tu dinosaurio y corre por ${DINO_WORLDS.length} mundos.`,
       theme: 'dino',
       art: renderDinoArt(),
       records: [
@@ -155,16 +217,16 @@ export function mountMenu(root) {
     renderGameCard({
       path: '/geo',
       title: 'Salto Geométrico',
-      tagline: 'Salta, vuela y gira por 5 mundos de figuras.',
+      tagline: `Salta, vuela y gira por ${GEO_WORLDS.length - 1} mundos de figuras… ¡y uno secreto!`,
       theme: 'geo',
       art: renderGeoArt(),
       records: [
-        { icon: '🏁', label: 'Niveles', value: `${countCompleted(geo)}/${GEO_LEVELS.length}` },
+        { icon: '🏁', label: 'Niveles', value: `${countCompleted(geo)}/${MAIN_LEVELS.length}` },
         { icon: '⭐', label: 'Estrellas', value: `${countGeoStars(geo)}/${MAX_STARS}` },
         { icon: '🏅', label: 'Retos', value: `${geo.achievements.length}/${ACHIEVEMENTS.length}` },
       ],
     }),
   ]);
 
-  root.append(el('main', { className: 'page menu' }, [header, renderPlayerSwitcher(), cards]));
+  root.append(el('main', { className: 'page menu' }, [header, renderPlayerSwitcher(), renderTreasureBar(), cards]));
 }

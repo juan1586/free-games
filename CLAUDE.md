@@ -18,7 +18,7 @@ npm run check:levels   # bot que verifica que los niveles de Salto Geométrico s
 ## Estructura
 
 ```
-src/main.js        router por hash: #/, #/perfil, #/dino, #/dino/jugar?mundo=N[&carrera=1],
+src/main.js        router por hash: #/, #/perfil, #/album, #/dino, #/dino/jugar?mundo=N[&carrera=1],
                    #/tetris, #/tetris/jugar?mundo=N, #/geo, #/geo/jugar?nivel=N[&practica=1|&carrera=1],
                    salas de espera: #/dino/carrera?mundo=N, #/geo/carrera?nivel=N
 src/core/          storage (localStorage con fallback en memoria), player (perfiles y datos por juego),
@@ -26,6 +26,7 @@ src/core/          storage (localStorage con fallback en memoria), player (perfi
                    createMusicLoop), gameLoop (rAF con delta y auto-pausa), canvas (setupCanvas con DPR),
                    race (salas de hasta 4 con PeerJS/WebRTC), raceMatch (lógica común de carrera),
                    random (createRandom con semilla), analytics (GoatCounter: trackPage, trackEvent)
+src/album/         stickers (pegatinas de todos los juegos, syncStickers, cofre del día), album (pantalla)
 src/ui/            dom (el, navigate), hud (createGameHeader, createBanner), modal (showModal), menu, profile,
                    raceLobby (sala de espera común), raceResults (podio y fin de carrera)
 src/games/dino/    DinoGame, dinos (tipos y dibujo), worlds (mundos y obstáculos), setup, race, raceLobby
@@ -63,6 +64,7 @@ scripts/           check-geo-levels.mjs
 - Mundos 6-8 (`expert: true`) son para expertos; los 5 primeros se dejan como están, para principiantes.
 - Velocidades elegibles (`SPEEDS`: 🐢 ×0.85, 🐇 ×1, ⚡ ×1.2) y turbo (`TURBO_FACTOR` ×1.25).
 - **Cualquier cambio en niveles, física o velocidades ⇒ ejecutar `npm run check:levels`.** Comprueba cada nivel en las 3 velocidades, con y sin turbo, con decisiones cada 100 ms, y que todas las monedas son alcanzables. Tarda unos 3 minutos; `npm run check:levels -- 2-3` comprueba solo un nivel.
+- Nivel secreto 9-1 (mundo con `secret: true`): no entra en `unlockedLevel`; se abre con `SECRET_COINS` monedas de los niveles normales (`canPlayLevel`, `MAIN_LEVELS` en `achievements.js` / `levels.js`).
 - Progreso: `unlockedLevel` (índice lineal 0..23). Los niveles nuevos se añaden al final; quien ya terminó el último que había lo encuentra abierto (`unlockAddedLevels` en `setup.js`). Solo desbloquea el modo normal (a cualquier velocidad). Estrellas = niveles completados + monedas + 2 por reto. Desbloquean apariencias (`shapes.js`).
 
 ## Modo carrera (Dino y Salto Geométrico, de 2 a 4 jugadores, cada uno en su dispositivo)
@@ -72,6 +74,12 @@ scripts/           check-geo-levels.mjs
 - `ui/raceLobby.js` es la sala de espera común (jugadores, código, empezar); cada juego le pasa su configuración y su "look" (figura de Geo / dino y nombre). Lo propio de cada juego y la validación de lo que llega están en `games/<juego>/race.js`; los nombres pasan por `sanitizeName` y los avatares por `AVATARS`.
 - Cada uno simula su partida y envía su posición 15 veces/s; los demás se dibujan como fantasmas y en la barra de avance. Chocar no elimina: en Geo se vuelve a la bandera; en Dino se tropieza (`STUMBLE_SECONDS`). La pista de Dino sale de la semilla de `go` (`createRandom`) en posiciones de distancia fijas, sin depender del turbo de cada uno.
 - En carrera no se guardan récords ni desbloqueos (en Dino sí las monedas). Premio: `racesPlayed` para todos y `raceWins` (copa 🏆) para quien gana, en `dino` y `geo`; en Geo además los retos `first-race`, `race-win`, `race-wins-3`.
+
+## Álbum y cofre del día
+
+- `album/stickers.js`: cada pegatina tiene `check(ctx)` sobre los datos guardados de los juegos (`ctx = { dino, geo, tetris, album }`); `syncStickers()` se llama en el router en cada cambio de pantalla, así los juegos no tienen que avisar. Las del cofre (`chest: true`) solo salen al abrirlo. Datos en `getGameData('album')` (`stickers`, `fresh` = aún no vistas, `lastChest` = fecha local, `chestsOpened`).
+- El cofre se abre una vez al día desde el menú: pegatina sorpresa o monedas de Dino.
+- Al añadir logros nuevos en un juego, conviene añadir su pegatina.
 
 ## Añadir un juego nuevo
 

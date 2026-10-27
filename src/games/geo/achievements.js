@@ -1,12 +1,12 @@
-import { GEO_LEVELS } from './levels.js';
+import { GEO_LEVELS, MAIN_LEVELS } from './levels.js';
 
 /** Estrellas que da cada reto cumplido (además de 1 por nivel y 1 por moneda). */
 export const STARS_PER_ACHIEVEMENT = 2;
 
 const levelProgress = (data, level) => data.levels[level.id] ?? {};
 const completedLevels = (data) => GEO_LEVELS.filter((level) => levelProgress(data, level).completed);
-const countCoins = (data) =>
-  GEO_LEVELS.reduce((total, level) => total + (levelProgress(data, level).coins ?? []).filter(Boolean).length, 0);
+const countCoins = (data, levels = GEO_LEVELS) =>
+  levels.reduce((total, level) => total + (levelProgress(data, level).coins ?? []).filter(Boolean).length, 0);
 const completedWithMode = (data, mode) => completedLevels(data).some((level) => level.modes.includes(mode));
 const completedWithPortal = (data, portal) => completedLevels(data).some((level) => level.portals.has(portal));
 
@@ -62,6 +62,13 @@ export const ACHIEVEMENTS = [
     check: (data, context) => Boolean(context.won && !context.practice && context.expert && context.attempts === 1),
   },
   {
+    id: 'dragon',
+    icon: '🐉',
+    title: 'Domadora de dragones',
+    description: 'Termina el nivel secreto.',
+    check: (data) => completedLevels(data).some((level) => level.secret),
+  },
+  {
     id: 'boss',
     icon: '👑',
     title: 'Vencí al jefe',
@@ -75,17 +82,25 @@ export const ACHIEVEMENTS = [
     id: 'all-levels',
     icon: '🌈',
     title: 'Corona arcoíris',
-    description: `Termina los ${GEO_LEVELS.length} niveles.`,
-    check: (data) => completedLevels(data).length === GEO_LEVELS.length,
+    description: `Termina los ${MAIN_LEVELS.length} niveles.`,
+    check: (data) => MAIN_LEVELS.every((level) => levelProgress(data, level).completed),
   },
   {
     id: 'all-coins',
     icon: '👑',
     title: 'Tesoro completo',
-    description: `Consigue las ${GEO_LEVELS.length * 3} monedas.`,
-    check: (data) => countCoins(data) === GEO_LEVELS.length * 3,
+    description: `Consigue las ${MAIN_LEVELS.length * 3} monedas.`,
+    check: (data) => countCoins(data, MAIN_LEVELS) === MAIN_LEVELS.length * 3,
   },
 ];
+
+/** Monedas (de los niveles normales) que abren el nivel secreto. */
+export const SECRET_COINS = 60;
+export const countMainCoins = (data) => countCoins(data, MAIN_LEVELS);
+export const isSecretUnlocked = (data) => countMainCoins(data) >= SECRET_COINS;
+
+/** ¿Puede jugar este nivel? Los normales se abren en orden; el secreto, con monedas. */
+export const canPlayLevel = (data, level) => (level.secret ? isSecretUnlocked(data) : level.index <= data.unlockedLevel);
 
 /** Devuelve los retos que se acaban de cumplir (aún no guardados). */
 export function findNewAchievements(data, context = {}) {

@@ -2,10 +2,10 @@ import { el, navigate } from '../../ui/dom.js';
 import { getGameData, updateGameData } from '../../core/player.js';
 import { sounds } from '../../core/audio.js';
 import { setupCanvas } from '../../core/canvas.js';
-import { GEO_LEVELS, GEO_WORLDS } from './levels.js';
+import { GEO_LEVELS, GEO_WORLDS, MAIN_LEVELS } from './levels.js';
 import { SPEEDS, getSpeed } from './physics.js';
 import { SKIN_GROUPS, drawPlayer, resolveSkin } from './shapes.js';
-import { ACHIEVEMENTS, MAX_STARS, countStars, findNewAchievements } from './achievements.js';
+import { ACHIEVEMENTS, MAX_STARS, SECRET_COINS, canPlayLevel, countMainCoins, countStars, findNewAchievements } from './achievements.js';
 
 const PREVIEW_WIDTH = 260;
 const PREVIEW_HEIGHT = 150;
@@ -25,7 +25,7 @@ function suggestedLevel(data) {
 /** Quien terminó el último nivel cuando aún no había más encuentra abierto el siguiente. */
 function unlockAddedLevels(data) {
   const lastUnlocked = GEO_LEVELS[data.unlockedLevel];
-  if (data.unlockedLevel < GEO_LEVELS.length - 1 && levelProgress(data, lastUnlocked).completed) {
+  if (data.unlockedLevel < MAIN_LEVELS.length - 1 && levelProgress(data, lastUnlocked).completed) {
     updateGameData('geo', { unlockedLevel: data.unlockedLevel + 1 });
   }
 }
@@ -47,7 +47,7 @@ export function mountGeoSetup(root) {
 
   const levelButtons = GEO_LEVELS.map((level) => {
     const progress = levelProgress(data, level);
-    const isLocked = level.index > data.unlockedLevel;
+    const isLocked = !canPlayLevel(data, level);
     const coins = Array.from({ length: COINS_PER_LEVEL }, (_, index) =>
       el('span', { className: progress.coins?.[index] ? 'is-earned' : '', text: '🪙' }),
     );
@@ -87,14 +87,17 @@ export function mountGeoSetup(root) {
   }
   highlightLevel();
 
+  const lockHint = (world) =>
+    world.secret ? `🔒 Junta ${SECRET_COINS} 🪙 para abrirlo (tienes ${countMainCoins(data)})` : 'Termina el mundo anterior';
+
   const worldCards = GEO_WORLDS.map((world, worldIndex) => {
     const buttons = levelButtons.filter((button) => GEO_LEVELS[button.dataset.index].worldIndex === worldIndex);
     const isLocked = buttons.every((button) => button.disabled);
     const isFirstExpert = world.expert && !GEO_WORLDS[worldIndex - 1]?.expert;
-    const card = el('article', { className: `geo-world geo-world--${world.id} ${isLocked ? 'is-locked' : ''}` }, [
+    const card = el('article', { className: `geo-world geo-world--${world.id} ${isLocked ? 'is-locked' : ''} ${world.secret ? 'geo-world--secret' : ''}` }, [
       el('header', { className: 'geo-world__header' }, [
         el('span', { className: 'geo-world__emoji', text: isLocked ? '🔒' : world.emoji, attrs: { 'aria-hidden': 'true' } }),
-        el('div', {}, [el('strong', { text: world.name }), el('small', { text: isLocked ? 'Termina el mundo anterior' : world.mechanic })]),
+        el('div', {}, [el('strong', { text: world.name }), el('small', { text: isLocked ? lockHint(world) : world.mechanic })]),
       ]),
       el('div', { className: 'geo-levels' }, buttons),
     ]);

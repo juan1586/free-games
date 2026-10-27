@@ -26,7 +26,7 @@ import {
 import { GEO_LEVELS } from './levels.js';
 import { PORTAL_STYLES, drawFinish, drawObjects } from './obstacles.js';
 import { RAINBOW, drawPlayer, resolveSkin } from './shapes.js';
-import { findNewAchievements } from './achievements.js';
+import { canPlayLevel, findNewAchievements } from './achievements.js';
 import { parseGeoPos } from './race.js';
 
 /** El alto lógico es fijo; el ancho se adapta a la pantalla (más ancho en celular horizontal). */
@@ -79,7 +79,9 @@ export class GeoGame {
     // En carrera manda la sala: se puede correr un nivel que aún no se tiene (no lo desbloquea).
     this.race = race ? getSession() : null;
     const raceConfig = this.race?.meta.config;
-    this.levelIndex = this.race ? raceConfig.levelIndex : clamp(levelIndex, 0, Math.min(data.unlockedLevel, GEO_LEVELS.length - 1));
+    const requested = GEO_LEVELS[levelIndex];
+    const canPlay = requested && canPlayLevel(data, requested);
+    this.levelIndex = this.race ? raceConfig.levelIndex : canPlay ? levelIndex : clamp(levelIndex, 0, Math.min(data.unlockedLevel, GEO_LEVELS.length - 1));
     this.definition = GEO_LEVELS[this.levelIndex];
     this.world = this.definition.world;
     this.palette = this.world.palette;
@@ -493,7 +495,8 @@ export class GeoGame {
 
     const data = getGameData('geo');
     const nextIndex = this.levelIndex + 1;
-    const nextLevel = GEO_LEVELS[nextIndex];
+    // Tras el último nivel normal no se pasa al secreto: ese se abre con monedas.
+    const nextLevel = GEO_LEVELS[nextIndex]?.secret ? null : GEO_LEVELS[nextIndex];
     const unlocksNext = !this.practice && nextLevel && data.unlockedLevel < nextIndex;
     const { label } = this.definition;
     if (this.practice) {

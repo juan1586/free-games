@@ -621,6 +621,18 @@
   --world-bg: linear-gradient(160deg, #0f3d3e, #4dd4ac);
   --world-text: var(--c-white);
 }
+.geo-world--dragon {
+  --world-bg: linear-gradient(160deg, #1a0505, #8a1a1a 60%, #ffc21a);
+  --world-text: var(--c-white);
+}
+.geo-world--secret {
+  border: 3px solid #ffc21a;
+  box-shadow: 0 0 18px rgba(255, 193, 26, 0.55);
+}
+.geo-world--secret.is-locked {
+  filter: none;
+  opacity: 0.9;
+}
 .geo-world--disco {
   --world-bg: linear-gradient(160deg, #140a2e, #5a1fa8 60%, #ff5fd2);
   --world-text: var(--c-white);

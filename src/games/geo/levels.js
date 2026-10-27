@@ -1020,6 +1020,83 @@ export const GEO_WORLDS = [
       },
     ],
   },
+  // Mundo secreto: no se abre al terminar el anterior, sino al juntar muchas monedas (ver achievements.js).
+  {
+    id: 'dragon',
+    name: 'Cueva del Dragón',
+    emoji: '🐉',
+    expert: true,
+    secret: true,
+    mechanic: '¡Nivel secreto para las más valientes!',
+    speed: 350,
+    decor: 'star',
+    palette: {
+      skyTop: '#1a0505',
+      skyBottom: '#8a1a1a',
+      decor: 'rgba(255, 193, 26, 0.55)',
+      ground: '#3b0f0f',
+      groundDark: '#2a0a0a',
+      line: '#ffc21a',
+      block: '#ffc21a',
+      blockInner: '#ffe27a',
+      spike: '#ff5a1f',
+      text: '#ffffff',
+    },
+    music: { bpm: 156, melody: 'D5 F5 A5 D6 C6 A5 F5 A5 A#4 D5 F5 A#5 A5 F5 E5 C#5', bass: 'D3 D3 A#2 A#2 F2 F2 A2 A2' },
+    levels: [
+      {
+        name: '🐉 La Cueva del Dragón',
+        ...compose([
+          gap(2),
+          spikes(3, 6),
+          spikyLedge(8, 5),
+          toSpeed(true),
+          gap(2),
+          spikes(1, 7),
+          spikes(2, 8),
+          coinAt(-5, 3),
+          toSpeed(false),
+          toGravity('up'),
+          gap(2),
+          onCeiling(spikePit(3, 5)),
+          onCeiling(spikes(2, 5)),
+          toGravity('down'),
+          gap(2),
+          toMode('wave'),
+          gap(3),
+          waveGates([1, 4, 1, 4, 2]),
+          coinAt(-10, 5.5),
+          waveSpikes(8, 3),
+          toMode('magnet'),
+          gap(3),
+          magnetPillars(3, 5),
+          magnetFlips(['ceiling', 'floor', 'ceiling', 'floor'], 5),
+          toMode('ball'),
+          gap(3),
+          ballIslands(2),
+          ballFlips(['floor', 'ceiling', 'floor'], 6),
+          toMode('plane'),
+          gap(3),
+          planeGates([3, 1, 3, 1]),
+          planeSaws([[2, 1.5], [6, 5]]),
+          toMode('rocket'),
+          gap(3),
+          rocketTunnel(8),
+          rocketGates(['high', 'low', 'high', 'low']),
+          toMode('cube'),
+          gap(4),
+          gravityOrbHop(3),
+          onCeiling(spikyLedge(8, 5)),
+          toGravity('down'),
+          gap(2),
+          sawOverLedge(5),
+          spikeSandwich(3, 5),
+          coinAt(-4, 3.2),
+          spikes(3, 8),
+        ]),
+      },
+    ],
+  },
 ];
 
 /** Lista plana de niveles con su mundo, en orden de desbloqueo. */
@@ -1037,5 +1114,11 @@ export const GEO_LEVELS = GEO_WORLDS.flatMap((world, worldIndex) =>
   })),
 );
 
-GEO_LEVELS.forEach((level, index) => (level.index = index));
+GEO_LEVELS.forEach((level, index) => {
+  level.index = index;
+  level.secret = Boolean(level.world.secret);
+});
+
+/** Niveles que se abren uno tras otro (todos menos el secreto). */
+export const MAIN_LEVELS = GEO_LEVELS.filter((level) => !level.secret);
 
