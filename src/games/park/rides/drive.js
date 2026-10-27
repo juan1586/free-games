@@ -34,6 +34,7 @@ const CHICKEN = {
  * theme = { vehicle(kit), seats: { driver, copilot, back } ({ x, z, seatY, scale }), ground, road, line,
  *   sky?, bob?, scenery(kit, positions), pickup: { build(kit), stat, icon, lines, saying },
  *   puddle: { color, build?(kit), text, stat, lines }, critter?: { build(kit), icon, stat, fled, bumped },
+ *   companion?: { build(kit), place(object, { x, z, time }) } (un animal que acompaña, como el delfín rosado),
  *   horn?: { icon, label }, intro, emoji, titles: { clean, normal } }
  */
 export function createDriveRide({ kit, look, random, announce, mates }, theme) {
@@ -85,6 +86,8 @@ export function createDriveRide({ kit, look, random, announce, mates }, theme) {
     mateRiders.set(secondMate.id, seat(createMateRider(kit, random, secondMate, { scale: backSeat.scale, seatY: backSeat.seatY }), backSeat));
   }
   scene.add(jeep);
+  const companion = theme.companion?.build(kit);
+  if (companion) scene.add(companion);
 
   const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 500);
   const items = [];
@@ -164,6 +167,7 @@ export function createDriveRide({ kit, look, random, announce, mates }, theme) {
       if (bob) jeep.rotation.x = Math.sin(time * 3 + 1) * bob * 0.2;
       jeep.rotation.z = steer * 0.05;
       jeep.rotation.y = Math.PI - steer * 0.25;
+      if (companion) theme.companion.place(companion, { x, z, time });
 
       if (input.actionPressed) {
         sounds.honk();

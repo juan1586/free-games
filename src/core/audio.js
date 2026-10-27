@@ -68,6 +68,14 @@ export const sounds = {
   cannon: () => playTone({ frequency: 140, endFrequency: 35, duration: 0.45, type: 'sawtooth', volume: 0.15 }),
   bubble: () => playTone({ frequency: 500, endFrequency: 1100, duration: 0.09, type: 'sine', volume: 0.08 }),
   oink: () => playMelody([[520, 0, 0.06], [420, 0.08, 0.08]], 'square'),
+  zip: () => playTone({ frequency: 1400, endFrequency: 700, duration: 0.5, type: 'sine', volume: 0.05 }),
+  frog: () => playMelody([[300, 0, 0.06], [220, 0.09, 0.08]], 'square'),
+  /** Cada guacamaya del coro canta su nota (0 a 3). */
+  macaw: (index) => {
+    const frequency = [523, 659, 784, 1047][index] ?? 523;
+    playTone({ frequency, endFrequency: frequency * 1.06, duration: 0.32, type: 'triangle', volume: 0.13 });
+    playTone({ frequency: frequency * 2, duration: 0.18, type: 'sine', volume: 0.04 });
+  },
 };
 
 const NOTE_OFFSETS = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };

@@ -76,6 +76,12 @@ const MUSIC = {
     melody: 'A4 C5 E5 C5 D5 E5 G5 E5 - E5 D5 C5 D5 E5 C5 A4 - A4 C5 E5 G5 A5 G5 E5 - D5 C5 D5 E5 A4 - - -',
     bass: 'A2 A3 A2 A3 F2 F3 F2 F3 C3 C3 G2 G3 A2 A3 E3 E3',
   },
+  // Flauta pentatónica y tambores para la selva.
+  selva: {
+    bpm: 104,
+    melody: 'D5 E5 G5 - A5 G5 E5 - D5 E5 G5 A5 B5 - A5 - G5 A5 B5 D6 B5 A5 G5 - E5 G5 A5 G5 E5 D5 - -',
+    bass: 'D3 D3 A2 D3 G2 G3 D3 D3 D3 D3 A2 D3 E3 A2 D3 D3',
+  },
   panaca: {
     bpm: 138,
     melody: 'G4 G4 C5 C5 E5 E5 C5 - D5 D5 B4 B4 G4 - - - G4 G4 C5 C5 E5 E5 G5 - F5 E5 D5 B4 C5 - - -',
@@ -144,6 +150,8 @@ export class ParkGame {
     this.scene.add(this.avatar.root, this.avatar.shadow);
 
     this.player = { x: SPAWN.x, y: 0, z: SPAWN.z, vy: 0, heading: Math.PI, onGround: true, airTime: 0, speed: 0 };
+    /** Último sitio seco donde se pisó (para volver si se cae al agua). */
+    this.drySpot = { x: SPAWN.x, y: 0, z: SPAWN.z };
     this.cameraYaw = 0;
     this.cameraPitch = 0.42;
     this.dragHold = 0;
@@ -520,11 +528,21 @@ export class ParkGame {
       player.vy = 0;
       player.onGround = true;
       player.airTime = 0;
+      if (ground === 0 && this.park.isWater?.(player.x, player.z)) this.fallInWater();
+      else Object.assign(this.drySpot, { x: player.x, y: player.y, z: player.z });
     } else {
       player.onGround = false;
       player.airTime += delta;
     }
     this.collectPickups();
+  }
+
+  /** Al pisar el agua (río, lago): ¡splash! y se vuelve a la orilla, sin perder nada. */
+  fallInWater() {
+    const { player, drySpot } = this;
+    sounds.splash();
+    Object.assign(player, { x: drySpot.x, y: drySpot.y, z: drySpot.z, vy: 0 });
+    this.playerSay('💦 ¡Splash!');
   }
 
   syncAvatar(delta) {
@@ -577,7 +595,7 @@ export class ParkGame {
       const radius = 6 + Math.random() * (PARK_RADIUS - 8);
       const x = Math.sin(angle) * radius;
       const z = Math.cos(angle) * radius;
-      if (isBlocked(this.park.colliders, x, z, 1)) continue;
+      if (isBlocked(this.park.colliders, x, z, 1) || this.park.isWater?.(x, z)) continue;
       if (queueSegments.some(([a, b]) => distanceToSegment({ x, z }, a, b) < 1.8)) continue;
       entry.mesh.position.set(x, 1, z);
       entry.mesh.visible = true;

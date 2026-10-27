@@ -126,8 +126,42 @@ export const PLAYA_RIDES = [
   },
 ];
 
+/** Atracciones de la Selva Amazónica. */
+export const SELVA_RIDES = [
+  {
+    id: 'tirolesa',
+    name: 'Vuelo del Tucán',
+    emoji: '🌿',
+    description: 'Baja en tirolesa entre árboles gigantes y atrapa mariposas.',
+    entrance: { x: 24, z: -18 },
+    queueDir: { x: -0.8, z: 0.6 },
+    fastPassPrice: 12,
+    secondsPerPerson: 2.4,
+  },
+  {
+    id: 'canoa',
+    name: 'Canoa por el Amazonas',
+    emoji: '🛶',
+    description: 'Rema por el río, recoge frutas y saluda a los delfines rosados.',
+    entrance: { x: -24, z: -18 },
+    queueDir: { x: 0.8, z: 0.6 },
+    fastPassPrice: 10,
+    secondsPerPerson: 2.4,
+  },
+  {
+    id: 'guacamayas',
+    name: 'Coro de Guacamayas',
+    emoji: '🦜',
+    description: 'Escucha la canción de las guacamayas y repítela.',
+    entrance: { x: 0, z: -30 },
+    queueDir: { x: 0, z: 1 },
+    fastPassPrice: 10,
+    secondsPerPerson: 2.2,
+  },
+];
+
 /** Todas las atracciones de todos los parques (los ids no se repiten). */
-export const ALL_RIDES = [...RIDES, ...PANACA_RIDES, ...PLAYA_RIDES];
+export const ALL_RIDES = [...RIDES, ...PANACA_RIDES, ...PLAYA_RIDES, ...SELVA_RIDES];
 
 export const getRide = (id) => ALL_RIDES.find((ride) => ride.id === id);
 
@@ -169,6 +203,18 @@ export const GOLDEN_SHELLS = [
   { id: 'shell-8', x: 42, y: 0.9, z: 8, hint: 'En la orilla del mar' },
 ];
 
+/** Ranas doradas escondidas en la Selva Amazónica. */
+export const GOLDEN_FROGS = [
+  { id: 'frog-1', x: 38.6, y: 4.9, z: 20, hint: 'En la casa del árbol (sube por la escalera)' },
+  { id: 'frog-2', x: 0, y: 0.9, z: -5.6, hint: 'Detrás de la maloca' },
+  { id: 'frog-3', x: 38.5, y: 4.9, z: 2.5, hint: 'Al otro lado del puente colgante' },
+  { id: 'frog-4', x: -38.6, y: 1.15, z: 34.4, hint: 'En la victoria regia del lago (¡salta de hoja en hoja!)' },
+  { id: 'frog-5', x: -20, y: 0.9, z: -58.3, hint: 'Detrás de la cascada' },
+  { id: 'frog-6', x: -40.8, y: 0.9, z: 9, hint: 'Junto al caimán dormido (¡sin despertarlo!)' },
+  { id: 'frog-7', x: 25.5, y: 4.5, z: 39.5, hint: 'En lo alto de los hongos gigantes (¡salta!)' },
+  { id: 'frog-8', x: -49, y: 1.2, z: -30, hint: 'En la punta del embarcadero' },
+];
+
 /**
  * Parques. `treasure`: lo que se colecciona en cada uno (`key` es el campo de `park` donde se guarda).
  * `unlock`: qué hay que hacer para abrirlo (sin `unlock`, abierto desde el principio).
@@ -206,6 +252,18 @@ export const PARK_WORLDS = [
       check: (data) => PANACA_RIDES.every((ride) => (data.ridesDone[ride.id] ?? 0) >= 1),
     },
   },
+  {
+    id: 'selva',
+    name: 'Selva Amazónica',
+    emoji: '🐒',
+    description: 'Árboles gigantes, el río Amazonas, monos, guacamayas y ranas doradas.',
+    rides: SELVA_RIDES,
+    treasure: { key: 'goldenFrogs', name: 'Ranas doradas', short: 'Ranas', icon: '🐸', item: 'rana dorada', items: GOLDEN_FROGS },
+    unlock: {
+      hint: 'Monta en todas las atracciones de la Playa de Cartagena',
+      check: (data) => PLAYA_RIDES.every((ride) => (data.ridesDone[ride.id] ?? 0) >= 1),
+    },
+  },
 ];
 
 export const isWorldOpen = (world, data) => !world.unlock || world.unlock.check(data);
@@ -213,7 +271,6 @@ export const getWorldOfRide = (rideId) => PARK_WORLDS.find((world) => world.ride
 
 /** Mundos que vendrán (se muestran como «próximamente» en la pantalla previa). */
 export const UPCOMING_WORLDS = [
-  { id: 'selva', name: 'Selva Amazónica', emoji: '🐒' },
   { id: 'dulces', name: 'Castillo de Dulces', emoji: '🍭' },
 ];
 

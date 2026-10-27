@@ -42,6 +42,9 @@ export const SAYINGS = {
   star: { text: '⭐ ¡Una estrella de mar!' },
   boom: { text: '💥 ¡Le di!' },
   pearl: { text: '🦪 ¡Una perla!' },
+  butterfly: { text: '🦋 ¡Una mariposa!' },
+  fruit: { text: '🍌 ¡Una fruta!' },
+  song: { text: '🎶 ¡La canté!' },
 };
 export const EMOTES = Object.keys(SAYINGS).filter((kind) => SAYINGS[kind].emote);
 

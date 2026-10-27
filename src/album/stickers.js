@@ -10,7 +10,7 @@ import { DINOS, isDinoUnlocked } from '../games/dino/dinos.js';
 import { GEO_LEVELS, GEO_WORLDS } from '../games/geo/levels.js';
 import { ACHIEVEMENTS, countStars as countGeoStars } from '../games/geo/achievements.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
-import { ALL_RIDES, GOLDEN_BEANS, GOLDEN_EGGS, GOLDEN_SHELLS, PANACA_RIDES, PARK_WORLDS, PLAYA_RIDES, RIDES, isWorldOpen } from '../games/park/worlds.js';
+import { ALL_RIDES, GOLDEN_BEANS, GOLDEN_EGGS, GOLDEN_FROGS, GOLDEN_SHELLS, PANACA_RIDES, PARK_WORLDS, PLAYA_RIDES, RIDES, SELVA_RIDES, isWorldOpen } from '../games/park/worlds.js';
 
 export const STICKER_GROUPS = [
   { id: 'dino', title: '🦖 Dino Corre', color: '#4dd4ac' },
@@ -89,6 +89,13 @@ export const STICKERS = [
   ),
   sticker('park', 'park-shells-all', '🐚', 'Todas las caracolas', 'Encuentra todas las caracolas doradas', ({ park }) =>
     park.goldenShells.length >= GOLDEN_SHELLS.length,
+  ),
+  sticker('park', 'park-selva', '🐒', 'Exploradora', 'Abre la Selva Amazónica', ({ park }) => isWorldOpen(PARK_WORLDS[3], park)),
+  sticker('park', 'park-selva-all', '🦜', 'Toda la selva', 'Monta en todas las atracciones de la Selva Amazónica', ({ park }) =>
+    SELVA_RIDES.every((ride) => (park.ridesDone[ride.id] ?? 0) >= 1),
+  ),
+  sticker('park', 'park-frogs-all', '🐸', 'Todas las ranas', 'Encuentra todas las ranas doradas', ({ park }) =>
+    park.goldenFrogs.length >= GOLDEN_FROGS.length,
   ),
   sticker('park', 'park-missions', '📋', 'Misionera', 'Cumple 10 misiones del parque', ({ park }) => park.missionsDone >= 10),
   sticker('park', 'park-friends', '👭', 'Parque con amigas', 'Entra al parque con amigas', ({ park }) => park.friendVisits >= 1),
