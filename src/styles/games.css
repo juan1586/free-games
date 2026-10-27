@@ -1452,7 +1452,11 @@
   box-shadow: var(--shadow-sm);
   font-size: 0.82rem;
   list-style: none;
-  pointer-events: none;
+  cursor: pointer;
+}
+
+.park-missions.is-collapsed li:not(.park-missions__title) {
+  display: none;
 }
 
 .park-missions li {
@@ -1841,9 +1845,24 @@
   align-items: start;
 }
 
+/* En el celular la vista previa va arriba, con los colores al lado, y no se queda pegada tapando la tienda. */
 @media (max-width: 640px) {
   .park-wardrobe__layout {
     grid-template-columns: 1fr;
+  }
+
+  .park-wardrobe__preview {
+    position: static;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+  }
+
+  .park-wardrobe__preview .park-colors {
+    grid-column: 2;
+  }
+
+  .park-wardrobe__preview .park-avatar {
+    grid-row: span 2;
   }
 }
 
@@ -1955,6 +1974,146 @@
   right: -18px;
   top: 90px;
   font-size: 2rem;
+}
+
+/* Pelo, cara y falda de la vista previa (data-hair, data-face y data-bottom en .park-avatar) */
+.park-avatar__hair-back,
+.park-avatar__hair-top,
+.park-avatar__hair-front,
+.park-avatar__skirt {
+  display: none;
+  background: var(--hair);
+}
+
+.park-avatar:not([data-hair='none']) .park-avatar__hair-top {
+  display: block;
+  left: 31px;
+  top: 16px;
+  width: 58px;
+  height: 18px;
+  border-radius: 10px 10px 4px 4px;
+}
+
+.park-avatar[data-hair='long'] .park-avatar__hair-back {
+  display: block;
+  left: 28px;
+  top: 20px;
+  width: 64px;
+  height: 96px;
+  border-radius: 12px 12px 8px 8px;
+}
+
+.park-avatar[data-hair='ponytail'] .park-avatar__hair-back {
+  display: block;
+  left: 84px;
+  top: 26px;
+  width: 16px;
+  height: 58px;
+  border-radius: 8px;
+  transform: rotate(-14deg);
+  border-top: 8px solid #ff5fa2;
+}
+
+.park-avatar[data-hair='pigtails'] .park-avatar__hair-back {
+  display: block;
+  left: 16px;
+  top: 30px;
+  width: 18px;
+  height: 44px;
+  border-radius: 9px;
+  border-top: 7px solid #ff5fa2;
+  box-shadow: 70px 0 0 var(--hair);
+}
+
+.park-avatar[data-hair='braids'] .park-avatar__hair-front {
+  display: block;
+  left: 34px;
+  top: 64px;
+  width: 11px;
+  height: 66px;
+  border-radius: 6px;
+  box-shadow: 41px 0 0 var(--hair);
+}
+
+.park-avatar[data-hair='bun'] .park-avatar__hair-back {
+  display: block;
+  left: 46px;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.park-avatar[data-hair='curly'] .park-avatar__hair-top {
+  display: none;
+}
+
+.park-avatar[data-hair='curly'] .park-avatar__hair-back {
+  display: block;
+  left: 20px;
+  top: 4px;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+}
+
+.park-avatar__face {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.park-avatar[data-face='lashes'] .park-avatar__face {
+  background:
+    linear-gradient(var(--c-ink), var(--c-ink)) 10px 13px / 13px 3px no-repeat,
+    linear-gradient(var(--c-ink), var(--c-ink)) 29px 13px / 13px 3px no-repeat;
+}
+
+.park-avatar[data-face='freckles'] .park-avatar__face {
+  background: radial-gradient(circle, #a8643a 1.5px, transparent 2px) 6px 30px / 7px 5px repeat-x;
+  -webkit-mask: linear-gradient(90deg, #000 30%, transparent 30% 70%, #000 70%);
+  mask: linear-gradient(90deg, #000 30%, transparent 30% 70%, #000 70%);
+}
+
+.park-avatar[data-face='blush'] .park-avatar__face {
+  background:
+    radial-gradient(circle, #ff6f9f 5px, transparent 6px) 1px 26px / 14px 12px no-repeat,
+    radial-gradient(circle, #ff6f9f 5px, transparent 6px) 37px 26px / 14px 12px no-repeat;
+}
+
+.park-avatar:not([data-bottom='pants']) .park-avatar__leg {
+  background: linear-gradient(var(--skin) 80%, var(--c-ink) 80%);
+}
+
+.park-avatar[data-bottom='skirt'] .park-avatar__skirt,
+.park-avatar[data-bottom='tutu'] .park-avatar__skirt {
+  display: block;
+  left: 16px;
+  top: 128px;
+  width: 88px;
+  height: 34px;
+  border-radius: 4px 4px 10px 10px;
+  background: var(--pants);
+  clip-path: polygon(10% 0, 90% 0, 100% 100%, 0 100%);
+}
+
+.park-avatar[data-bottom='tutu'] .park-avatar__skirt {
+  left: 6px;
+  width: 108px;
+  height: 22px;
+  top: 132px;
+  clip-path: polygon(20% 0, 80% 0, 100% 100%, 0 100%);
+}
+
+.park-colors {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.park-colors__title {
+  font-weight: 700;
+  color: var(--c-ink-soft);
 }
 
 .park-skins {
@@ -2154,5 +2313,323 @@
 
   .park-emotes {
     gap: 4px;
+  }
+}
+
+/* Botón para bajarse de la atracción (arriba a la izquierda) */
+.park-exit {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3;
+  display: none;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-sm);
+  font-weight: 700;
+}
+
+.stage--park[data-mode='ride'] .park-exit {
+  display: block;
+}
+
+/* La cámara solo se cambia caminando o en la fila. */
+.park-page[data-mode='ride'] .park-camera-button,
+.park-page[data-mode='result'] .park-camera-button {
+  display: none;
+}
+
+/* El botón que abre los saludos solo se usa en el celular. */
+.park-emote--toggle {
+  display: none;
+}
+
+/* Tablet o celular en vertical: el parque ocupa todo el alto, no una franja 16:9. */
+@media (orientation: portrait) {
+  .stage--park {
+    aspect-ratio: auto;
+    height: calc(100dvh - 130px);
+  }
+}
+
+/*
+ * Celular (en horizontal o en vertical): el parque ocupa toda la pantalla y la cabecera flota
+ * encima, pequeña. Las misiones y los saludos se pliegan; los botones se encogen un poco.
+ * Es la misma condición que COMPACT_QUERY en ParkGame.js.
+ */
+@media (max-height: 560px), (max-width: 700px) {
+  .park-page {
+    --safe-top: max(6px, env(safe-area-inset-top));
+    --safe-left: max(8px, env(safe-area-inset-left));
+    --safe-right: max(8px, env(safe-area-inset-right));
+    --safe-bottom: max(10px, env(safe-area-inset-bottom));
+    --bar: calc(var(--safe-top) + 46px);
+    position: relative;
+    display: block;
+    height: 100dvh;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .park-page .game-header {
+    position: absolute;
+    top: var(--safe-top);
+    left: var(--safe-left);
+    right: var(--safe-right);
+    z-index: 7;
+    flex-wrap: nowrap;
+    gap: 6px;
+    width: auto;
+    pointer-events: none;
+  }
+
+  .park-page .game-header > * {
+    pointer-events: auto;
+  }
+
+  .park-page .game-header__title {
+    display: none;
+  }
+
+  .park-page .hud {
+    flex-wrap: nowrap;
+    order: 0;
+    width: auto;
+    margin-left: 0;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .park-page .hud__label,
+  .park-page .hud__item--rides {
+    display: none;
+  }
+
+  .park-page .hud__item {
+    gap: 3px;
+    padding: 2px 9px;
+    background: rgba(255, 255, 255, 0.88);
+  }
+
+  .park-page .hud__value {
+    font-size: 1rem;
+  }
+
+  .park-page .game-header__actions {
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .park-page .icon-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 1.05rem;
+    box-shadow: 0 3px 0 #d9d0ff;
+  }
+
+  /* En la atracción solo quedan volver, pausa y sonido: el marcador no hace falta. */
+  .park-page[data-mode='ride'] .hud {
+    display: none;
+  }
+
+  .stage--park {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    aspect-ratio: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .stage--park .banner {
+    top: 22%;
+    font-size: 1.1rem;
+  }
+
+  .park-hint {
+    max-width: 88%;
+    font-size: 0.9rem;
+  }
+
+  .park-missions {
+    top: var(--bar);
+    left: var(--safe-left);
+    max-width: min(300px, 60%);
+    padding: 4px 10px;
+    font-size: 0.78rem;
+  }
+
+  /* Plegadas caben siempre (antes se ocultaban en pantallas bajas). */
+  .park-missions {
+    display: grid;
+  }
+
+  .park-friends {
+    top: calc(var(--bar) + 34px);
+    left: var(--safe-left);
+    right: auto;
+    min-width: 0;
+    max-width: min(240px, 50%);
+    padding: 4px 10px;
+    font-size: 0.72rem;
+  }
+
+  .stage--park[data-mode='ride'] .park-friends {
+    top: var(--bar);
+    left: auto;
+    right: var(--safe-right);
+  }
+
+  /* Saludos: un botón 😀 que abre la fila de gestos hacia la izquierda. */
+  .park-emotes {
+    top: var(--bar);
+    right: var(--safe-right);
+    flex-direction: row-reverse;
+    gap: 5px;
+    transform: none;
+  }
+
+  .park-emote {
+    width: 40px;
+    height: 40px;
+    font-size: 1.25rem;
+  }
+
+  .park-emote--toggle {
+    display: block;
+  }
+
+  .park-emotes:not(.is-open) .park-emote:not(.park-emote--toggle) {
+    display: none;
+  }
+
+  .park-emotes.is-open .park-emote--toggle {
+    background: var(--c-yellow);
+  }
+
+  .park-joystick {
+    left: var(--safe-left);
+    bottom: var(--safe-bottom);
+    width: 112px;
+    height: 112px;
+  }
+
+  .park-joystick__knob {
+    width: 48px;
+    height: 48px;
+  }
+
+  .park-touch .touch-btn--jump,
+  .park-action {
+    right: var(--safe-right);
+    bottom: var(--safe-bottom);
+    width: 84px;
+    height: 84px;
+  }
+
+  .park-action__icon {
+    font-size: 1.9rem;
+  }
+
+  .park-action__label {
+    font-size: 0.75rem;
+  }
+
+  .park-touch__steer {
+    left: var(--safe-left);
+    bottom: var(--safe-bottom);
+    gap: 8px;
+  }
+
+  .park-touch .touch-btn--steer {
+    width: 64px;
+    height: 64px;
+    font-size: 1.6rem;
+  }
+
+  /* El botón de hacer fila va entre el joystick y el de saltar. */
+  .park-prompt {
+    bottom: calc(var(--safe-bottom) + 6px);
+    max-width: calc(100% - 250px);
+    padding: 9px 14px;
+    font-size: 0.95rem;
+    line-height: 1.2;
+  }
+
+  .park-queue {
+    bottom: var(--safe-bottom);
+    gap: 6px;
+    width: min(520px, calc(100% - 20px));
+    padding: 8px 12px;
+  }
+
+  .park-queue__text {
+    font-size: 1rem;
+  }
+
+  .park-queue .btn {
+    padding: 8px 14px;
+    font-size: 0.95rem;
+  }
+
+  .park-cutter {
+    top: var(--bar);
+    padding: 8px 14px;
+    font-size: 0.95rem;
+  }
+
+  .park-exit {
+    top: var(--safe-top);
+    left: calc(var(--safe-left) + 46px);
+    z-index: 8;
+    padding: 0 12px;
+    height: 38px;
+    font-size: 0.95rem;
+  }
+
+  .park-ride-status {
+    top: var(--bar);
+    max-width: calc(100% - 20px);
+    padding: 4px 12px;
+    overflow: hidden;
+    font-size: 0.85rem;
+    text-overflow: ellipsis;
+  }
+
+  .park-ride-prompt {
+    font-size: clamp(1.3rem, 6vmin, 2.2rem);
+  }
+
+  .park-result__card {
+    gap: 6px;
+    padding: 12px 16px;
+  }
+
+  .park-result__title {
+    font-size: var(--fs-lg);
+  }
+}
+
+/* Celular en vertical: el botón de hacer fila va encima de los controles (no cabe entre ellos). */
+@media (max-width: 700px) and (orientation: portrait) {
+  .park-prompt {
+    bottom: calc(var(--safe-bottom) + 124px);
+    max-width: calc(100% - 24px);
+  }
+
+  .park-touch__steer {
+    right: calc(var(--safe-right) + 92px);
+    flex-wrap: wrap;
+  }
+}
+
+/* Celular estrecho en vertical: sin el botón de pantalla completa caben los marcadores. */
+@media (max-width: 420px) {
+  .park-fullscreen-button {
+    display: none;
   }
 }

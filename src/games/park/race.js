@@ -5,7 +5,7 @@
 import { getGameData } from '../../core/player.js';
 import { MAX_PLAYERS, isPlayerId } from '../../core/race.js';
 import { MAX_SEED } from '../../core/random.js';
-import { outfitIds } from './outfits.js';
+import { LOOK_KEYS, outfitIds } from './outfits.js';
 import { PARK_WORLDS, getRide } from './worlds.js';
 
 export const PARK_GAME = 'park';
@@ -70,13 +70,7 @@ export const parkLook = () => ({ outfit: outfitIds(getGameData('park')) });
 export function parseParkLook(look) {
   const outfit = look.outfit && typeof look.outfit === 'object' ? look.outfit : {};
   return {
-    outfit: {
-      skin: shortId(outfit.skin),
-      shirt: shortId(outfit.shirt),
-      pants: shortId(outfit.pants),
-      hat: shortId(outfit.hat),
-      extra: shortId(outfit.extra),
-    },
+    outfit: Object.fromEntries(LOOK_KEYS.map((key) => [key, shortId(outfit[key])])),
   };
 }
 

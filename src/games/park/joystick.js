@@ -1,7 +1,7 @@
 import { el } from '../../ui/dom.js';
 
-/** Distancia máxima (px) que se mueve la bolita del joystick. */
-const RANGE = 46;
+/** Distancia máxima que se mueve la bolita, como parte del tamaño del joystick (en el celular es más pequeño). */
+const RANGE = 0.36;
 
 /**
  * Joystick táctil para caminar. `vector` tiene x (derecha) e y (adelante) entre -1 y 1.
@@ -17,14 +17,15 @@ export function createJoystick() {
     const rect = element.getBoundingClientRect();
     let dx = event.clientX - (rect.left + rect.width / 2);
     let dy = event.clientY - (rect.top + rect.height / 2);
+    const range = rect.width * RANGE;
     const distance = Math.hypot(dx, dy);
-    if (distance > RANGE) {
-      dx *= RANGE / distance;
-      dy *= RANGE / distance;
+    if (distance > range) {
+      dx *= range / distance;
+      dy *= range / distance;
     }
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    vector.x = dx / RANGE;
-    vector.y = -dy / RANGE;
+    vector.x = dx / range;
+    vector.y = -dy / range;
   }
 
   function reset() {

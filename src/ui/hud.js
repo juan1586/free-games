@@ -4,15 +4,16 @@ import { sounds } from '../core/audio.js';
 
 /**
  * Cabecera de juego: botón volver, título, marcadores y controles de pausa/sonido.
- * items: [{ key, label, icon, value }]. Devuelve { element, set(key, value) }.
+ * items: [{ key, label, icon, value }]; extraActions: botones propios del juego (van antes de pausa).
+ * Devuelve { element, set(key, value) }.
  */
-export function createGameHeader({ title, backPath = '/', items = [], onPause }) {
+export function createGameHeader({ title, backPath = '/', items = [], onPause, extraActions = [] }) {
   const valueNodes = new Map();
 
   const stats = items.map(({ key, label, icon, value }) => {
     const valueNode = el('span', { className: 'hud__value', text: value ?? 0 });
     valueNodes.set(key, valueNode);
-    return el('div', { className: 'hud__item', attrs: { title: label } }, [
+    return el('div', { className: `hud__item hud__item--${key}`, attrs: { title: label } }, [
       el('span', { className: 'hud__icon', text: icon, attrs: { 'aria-hidden': 'true' } }),
       el('span', { className: 'hud__label', text: label }),
       valueNode,
@@ -56,7 +57,7 @@ export function createGameHeader({ title, backPath = '/', items = [], onPause })
     }),
     el('h1', { className: 'game-header__title', text: title }),
     el('div', { className: 'hud' }, stats),
-    el('div', { className: 'game-header__actions' }, [pauseButton, muteButton]),
+    el('div', { className: 'game-header__actions' }, [...extraActions, pauseButton, muteButton]),
   ]);
 
   return {

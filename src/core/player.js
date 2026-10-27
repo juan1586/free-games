@@ -36,7 +36,7 @@ const createDefaultGames = () => ({
   park: {
     coins: 0,
     welcomed: false,
-    outfit: { skin: 'skin-2', shirt: 'shirt-pink', pants: 'pants-jeans', hat: 'none', extra: 'none' },
+    outfit: { skin: 'skin-2', hair: 'hair-long', hairColor: 'hc-brown', face: 'face-smile', shirt: 'shirt-pink', pants: 'pants-jeans', hat: 'none', extra: 'none' },
     owned: [],
     ridesDone: {},
     totalRides: 0,
@@ -47,6 +47,7 @@ const createDefaultGames = () => ({
     goldenShells: [],
     goldenFrogs: [],
     lastWorld: 0,
+    camera: 'normal',
     missions: { day: '', list: [] },
     missionsDone: 0,
     friendVisits: 0,

@@ -36,7 +36,21 @@ const GRAVITY = 22;
 /** Margen para saltar justo después de salir de un borde. */
 const COYOTE_SECONDS = 0.12;
 const PLAYER_RADIUS = 0.45;
-const CAMERA_DISTANCE = 9;
+/** Modos de cámara (botón 🎥 o tecla C): distancia detrás de la jugadora; `first` = primera persona. */
+const CAMERA_MODES = [
+  { id: 'normal', icon: '🎥', label: 'Normal', distance: 9 },
+  { id: 'near', icon: '🔍', label: 'Cerca', distance: 5 },
+  { id: 'far', icon: '🔭', label: 'Lejos', distance: 15 },
+  { id: 'first', icon: '👀', label: 'Mis ojos', distance: 0 },
+];
+/** Altura de los ojos en primera persona. */
+const EYE_HEIGHT = 2;
+/** En primera persona, ◀ ▶ (o el joystick a los lados) giran la mirada a esta velocidad (rad/s). */
+const FIRST_PERSON_TURN = 2.4;
+/** Pantalla pequeña (celular): las misiones empiezan plegadas. Es la misma condición que en games.css. */
+const COMPACT_QUERY = '(max-height: 560px), (max-width: 700px)';
+/** En pantallas altas (celular en vertical) se abre el ángulo de la cámara para ver más. */
+const MAX_FOV = 85;
 const CAMERA_FOLLOW_RATE = 1.6;
 const DRAG_HOLD_SECONDS = 2;
 const COIN_COUNT = 30;
@@ -154,8 +168,10 @@ export class ParkGame {
     this.drySpot = { x: SPAWN.x, y: 0, z: SPAWN.z };
     this.cameraYaw = 0;
     this.cameraPitch = 0.42;
+    this.lookPitch = 0;
     this.dragHold = 0;
-    this.camera.position.set(SPAWN.x, 5, SPAWN.z + CAMERA_DISTANCE);
+    this.setCameraMode(CAMERA_MODES.find((mode) => mode.id === data.camera) ?? CAMERA_MODES[0]);
+    this.camera.position.set(SPAWN.x, 5, SPAWN.z + this.cameraMode.distance);
 
     this.keys = { forward: false, back: false, left: false, right: false, run: false };
     this.touchSteer = { left: false, right: false, up: false, down: false };
@@ -194,10 +210,28 @@ export class ParkGame {
 
   buildDom(root) {
     const data = getGameData('park');
+    this.cameraButton = el('button', {
+      className: 'icon-btn park-camera-button',
+      attrs: { type: 'button', 'aria-label': 'Cambiar la cámara' },
+      on: { click: (event) => this.handleButton(event, () => this.cycleCamera()) },
+    });
+    const extraActions = [this.cameraButton];
+    // Pantalla completa (en Android quita las barras del navegador; el iPhone no la tiene).
+    if (document.fullscreenEnabled) {
+      extraActions.push(
+        el('button', {
+          className: 'icon-btn park-fullscreen-button',
+          text: '⛶',
+          attrs: { type: 'button', 'aria-label': 'Pantalla completa', title: 'Pantalla completa' },
+          on: { click: (event) => this.handleButton(event, () => this.toggleFullscreen()) },
+        }),
+      );
+    }
     this.header = createGameHeader({
       title: `${this.withFriends ? '👭' : this.world.emoji} ${this.world.name}`,
       backPath: '/parque',
       onPause: () => this.pause(),
+      extraActions,
       items: [
         { key: 'coins', label: 'Monedas', icon: '🪙', value: data.coins },
         { key: 'beans', label: this.treasure.name, icon: this.treasure.icon, value: `${(data[this.treasure.key] ?? []).length}/${this.treasure.items.length}` },
@@ -213,7 +247,18 @@ export class ParkGame {
     ]);
 
     this.promptButton = el('button', { className: 'park-prompt', attrs: { type: 'button' }, on: { click: (event) => this.handleButton(event, () => this.interact()) } });
-    this.missionList = el('ul', { className: 'park-missions', attrs: { 'aria-label': 'Misiones de hoy' } });
+    // Las misiones se pliegan con un toque (en el celular empiezan plegadas para dejar sitio al juego).
+    this.missionList = el('ul', {
+      className: 'park-missions',
+      attrs: { 'aria-label': 'Misiones de hoy' },
+      on: {
+        click: () => {
+          this.missionList.classList.toggle('is-collapsed');
+          this.refreshMissions();
+        },
+      },
+    });
+    this.missionList.classList.toggle('is-collapsed', window.matchMedia(COMPACT_QUERY).matches);
     this.friendsList = el('ul', { className: 'park-friends', attrs: { 'aria-label': 'Amigas en el parque', hidden: !this.withFriends } });
     // Saludos y gestos (los ven las amigas y los visitantes cercanos contestan).
     this.emoteButtons = EMOTES.map((kind, index) =>
@@ -224,7 +269,14 @@ export class ParkGame {
         on: { click: (event) => this.handleButton(event, () => this.emote(kind)) },
       }),
     );
-    this.emoteBar = el('div', { className: 'park-emotes' }, this.emoteButtons);
+    // En el celular los saludos se guardan detrás de un botón para no tapar el juego.
+    this.emoteToggle = el('button', {
+      className: 'park-emote park-emote--toggle',
+      text: '😀',
+      attrs: { type: 'button', 'aria-label': 'Saludos', title: 'Saludos' },
+      on: { click: (event) => this.handleButton(event, () => this.emoteBar.classList.toggle('is-open')) },
+    });
+    this.emoteBar = el('div', { className: 'park-emotes' }, [this.emoteToggle, ...this.emoteButtons]);
 
     // Tarjeta de la fila.
     this.queueText = el('strong', { className: 'park-queue__text' });
@@ -251,6 +303,12 @@ export class ParkGame {
     this.rideStatus = el('div', { className: 'park-ride-status' });
     this.ridePrompt = el('div', { className: 'park-ride-prompt', attrs: { 'aria-live': 'polite' } });
     this.reticle = el('div', { className: 'park-reticle', attrs: { 'aria-hidden': 'true' } });
+    this.exitRideButton = el('button', {
+      className: 'park-exit',
+      text: '🚪 Bajarme',
+      attrs: { type: 'button', title: 'Bajarme de la atracción' },
+      on: { click: (event) => this.handleButton(event, () => this.askExitRide()) },
+    });
     this.actionButton = el('button', { className: 'park-action', attrs: { type: 'button' } }, [
       el('span', { className: 'park-action__icon' }),
       el('span', { className: 'park-action__label' }),
@@ -282,6 +340,7 @@ export class ParkGame {
       this.rideStatus,
       this.ridePrompt,
       this.reticle,
+      this.exitRideButton,
       this.hint,
       this.promptButton,
       this.queueCard,
@@ -291,7 +350,8 @@ export class ParkGame {
       this.resultLayer,
     ]);
     this.showBanner = createBanner(this.stage);
-    root.append(el('main', { className: 'page game-page park-page' }, [this.header.element, this.stage]));
+    this.page = el('main', { className: 'page game-page park-page' }, [this.header.element, this.stage]);
+    root.append(this.page);
   }
 
   showNoWebGl() {
@@ -312,6 +372,7 @@ export class ParkGame {
 
   setMode(mode) {
     this.stage.dataset.mode = mode;
+    this.page.dataset.mode = mode;
   }
 
   resize() {
@@ -327,6 +388,7 @@ export class ParkGame {
   bindControls() {
     const press = (action) => {
       if (action === 'pause') return this.pause();
+      if (action === 'camera') return this.cycleCamera();
       if (this.status === 'result') {
         if (['jump', 'interact'].includes(action)) this.closeResult();
         return;
@@ -356,6 +418,7 @@ export class ParkGame {
           jump: ['Space'],
           interact: ['KeyE', 'Enter', 'NumpadEnter'],
           pause: ['KeyP', 'Escape'],
+          camera: ['KeyC'],
           ...Object.fromEntries(EMOTES.map((_, index) => [`emote-${index}`, [`Digit${index + 1}`, `Numpad${index + 1}`]])),
         },
         { onPress: (action, repeat) => !repeat && press(action), onRelease: release },
@@ -395,7 +458,8 @@ export class ParkGame {
         return;
       }
       this.cameraYaw -= dx * 0.008;
-      this.cameraPitch = clamp(this.cameraPitch + dy * 0.005, 0.12, 1.1);
+      if (this.cameraMode.id === 'first') this.lookPitch = clamp(this.lookPitch - dy * 0.005, -0.8, 0.8);
+      else this.cameraPitch = clamp(this.cameraPitch + dy * 0.005, 0.12, 1.1);
       this.dragHold = DRAG_HOLD_SECONDS;
     };
     const up = (event) => {
@@ -456,8 +520,11 @@ export class ParkGame {
   render() {
     const camera = this.rideRun ? this.rideRun.session.camera : this.camera;
     const scene = this.rideRun?.session.scene ?? this.scene;
-    if (camera.aspect !== this.aspect) {
+    camera.userData.baseFov ??= camera.fov;
+    const fov = Math.min(MAX_FOV, camera.userData.baseFov * (1 + Math.max(0, 1.3 - this.aspect) * 0.5));
+    if (camera.aspect !== this.aspect || camera.fov !== fov) {
       camera.aspect = this.aspect;
+      camera.fov = fov;
       camera.updateProjectionMatrix();
     }
     this.renderer.render(scene, camera);
@@ -477,7 +544,15 @@ export class ParkGame {
 
   updateWalk(delta) {
     const { player } = this;
-    const { forward, strafe, amount } = this.movementInput();
+    let { forward, strafe, amount } = this.movementInput();
+    const firstPerson = this.cameraMode.id === 'first';
+    if (firstPerson) {
+      // En primera persona, a los lados se gira la mirada y adelante/atrás se camina hacia donde se mira.
+      this.cameraYaw -= strafe * FIRST_PERSON_TURN * delta;
+      player.heading = this.cameraYaw + Math.PI;
+      strafe = 0;
+      amount = Math.abs(forward);
+    }
     const sin = Math.sin(this.cameraYaw);
     const cos = Math.cos(this.cameraYaw);
     const dirX = -sin * forward + cos * strafe;
@@ -487,8 +562,8 @@ export class ParkGame {
     player.z += dirZ * speed * delta;
     player.speed = amount * speed;
 
-    if (amount > 0.1) {
-      if (this.hintTimer > 0 && this.hintTimer < HINT_SECONDS - 1.5) this.hintTimer = Math.min(this.hintTimer, 0.01);
+    if (amount > 0.1 && this.hintTimer > 0 && this.hintTimer < HINT_SECONDS - 1.5) this.hintTimer = Math.min(this.hintTimer, 0.01);
+    if (amount > 0.1 && !firstPerson) {
       const heading = Math.atan2(dirX, dirZ);
       player.heading += angleDiff(heading, player.heading) * Math.min(1, delta * 12);
       // La cámara se pone poco a poco detrás cuando se camina hacia delante.
@@ -561,15 +636,57 @@ export class ParkGame {
 
   updateCamera(delta) {
     const { player } = this;
-    const flat = Math.cos(this.cameraPitch) * CAMERA_DISTANCE;
+    if (this.cameraMode.id === 'first') {
+      const cos = Math.cos(this.lookPitch);
+      this.camera.position.set(player.x, player.y + EYE_HEIGHT, player.z);
+      this.camera.lookAt(
+        player.x - Math.sin(this.cameraYaw) * cos,
+        player.y + EYE_HEIGHT + Math.sin(this.lookPitch),
+        player.z - Math.cos(this.cameraYaw) * cos,
+      );
+      return;
+    }
+    const distance = this.cameraMode.distance;
+    const flat = Math.cos(this.cameraPitch) * distance;
     const target = new THREE.Vector3(player.x, player.y + 1.6, player.z);
     const desired = new THREE.Vector3(
       player.x + Math.sin(this.cameraYaw) * flat,
-      player.y + 1.5 + Math.sin(this.cameraPitch) * CAMERA_DISTANCE,
+      player.y + 1.5 + Math.sin(this.cameraPitch) * distance,
       player.z + Math.cos(this.cameraYaw) * flat,
     );
     this.camera.position.lerp(desired, Math.min(1, delta * 10));
     this.camera.lookAt(target);
+  }
+
+  cycleCamera() {
+    if (!['walk', 'queue'].includes(this.status)) return;
+    const index = CAMERA_MODES.indexOf(this.cameraMode);
+    const mode = CAMERA_MODES[(index + 1) % CAMERA_MODES.length];
+    this.setCameraMode(mode);
+    updateGameData('park', { camera: mode.id });
+    this.showBanner(`${mode.icon} Cámara: ${mode.label}`, 1200);
+  }
+
+  setCameraMode(mode) {
+    this.cameraMode = mode;
+    this.lookPitch = 0;
+    // Al pasar a primera persona se mira hacia donde iba la jugadora.
+    if (mode.id === 'first' && this.player) this.cameraYaw = this.player.heading + Math.PI;
+    this.cameraButton.textContent = mode.icon;
+    this.cameraButton.title = `Cámara: ${mode.label} (C)`;
+    this.syncAvatarVisibility();
+  }
+
+  /** La jugadora no se ve en primera persona ni mientras va en una atracción. */
+  syncAvatarVisibility() {
+    const visible = this.status !== 'ride' && this.cameraMode.id !== 'first';
+    this.avatar.root.visible = visible;
+    this.avatar.shadow.visible = visible;
+  }
+
+  toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else document.documentElement.requestFullscreen?.().catch(() => {});
   }
 
   // ---------- Monedas y granos dorados ----------
@@ -856,8 +973,7 @@ export class ParkGame {
     this.hideCutter();
     this.queueRide = null;
     this.status = 'ride';
-    this.avatar.root.visible = false;
-    this.avatar.shadow.visible = false;
+    this.syncAvatarVisibility();
     if (via === 'queue') this.progress('queue');
     const session = RIDE_FACTORIES[ride.id]({
       kit: this.kit,
@@ -955,7 +1071,17 @@ export class ParkGame {
     this.progress(`ride-${ride.id}`);
     this.friends?.say('ride', ride.id);
 
-    // Sale junto al final de la fila, mirando a la plaza (la cámara queda lejos del arco).
+    this.status = 'result';
+    this.placeAtRideExit(ride);
+    this.setMode('result');
+    sounds.win();
+    this.refreshHud();
+    this.showResult({ ride, result, photo, bonus });
+    this.checkStickers();
+  }
+
+  /** Sale junto al final de la fila, mirando a la plaza (la cámara queda lejos del arco). */
+  placeAtRideExit(ride) {
     const side = { x: -ride.queueDir.z, z: ride.queueDir.x };
     const exit = slotPosition(ride, MAX_QUEUE + 1);
     Object.assign(this.player, {
@@ -967,16 +1093,27 @@ export class ParkGame {
     });
     this.player.heading = Math.atan2(-this.player.x, -this.player.z);
     this.cameraYaw = this.player.heading + Math.PI;
-    this.camera.position.set(this.player.x - Math.sin(this.player.heading) * CAMERA_DISTANCE, 5, this.player.z - Math.cos(this.player.heading) * CAMERA_DISTANCE);
-    this.avatar.root.visible = true;
-    this.avatar.shadow.visible = true;
+    const distance = this.cameraMode.distance;
+    this.camera.position.set(this.player.x - Math.sin(this.player.heading) * distance, 5, this.player.z - Math.cos(this.player.heading) * distance);
+    this.syncAvatarVisibility();
+  }
 
-    this.status = 'result';
-    this.setMode('result');
-    sounds.win();
-    this.refreshHud();
-    this.showResult({ ride, result, photo, bonus });
-    this.checkStickers();
+  /** Botón 🚪: pregunta antes de bajarse (así un toque sin querer no la saca de la atracción). */
+  askExitRide() {
+    if (this.status !== 'ride') return;
+    this.pause({ exitRide: true });
+  }
+
+  /** Bajarse antes de terminar: sin premio ni viaje contado, y de vuelta junto a la fila. */
+  exitRide() {
+    if (this.status !== 'ride' || !this.rideRun) return;
+    const { ride, session } = this.rideRun;
+    session.dispose();
+    this.rideRun = null;
+    this.status = 'walk';
+    this.placeAtRideExit(ride);
+    this.setMode('walk');
+    this.notify(`🚪 Te bajaste de ${ride.emoji} ${ride.name}. ¡Vuelve cuando quieras!`);
   }
 
   showResult({ ride, result, photo, bonus }) {
@@ -1048,8 +1185,11 @@ export class ParkGame {
 
   refreshMissions() {
     const missions = describeMissions(todaysMissions(getGameData('park')));
+    const done = missions.filter((mission) => mission.done).length;
+    const collapsed = this.missionList.classList.contains('is-collapsed');
+    this.missionList.setAttribute('aria-expanded', String(!collapsed));
     this.missionList.replaceChildren(
-      el('li', { className: 'park-missions__title', text: '📋 Misiones de hoy' }),
+      el('li', { className: 'park-missions__title', text: `📋 Misiones ${done}/${missions.length} ${collapsed ? '▸' : '▾'}` }),
       ...missions.map((mission) =>
         el('li', { className: mission.done ? 'is-done' : '' }, [
           el('span', { text: `${mission.done ? '✅' : mission.icon} ${mission.text}` }),
@@ -1107,11 +1247,14 @@ export class ParkGame {
     this.bubble.setText(text);
     this.bubble.sprite.visible = true;
     this.bubbleTimer = BUBBLE_SECONDS;
+    // En primera persona no se ve la burbuja: se muestra como letrero.
+    if (this.cameraMode.id === 'first') this.showBanner(text, 1200);
   }
 
   emote(kind) {
     if (!kind || this.emoteCooldown > 0 || !['walk', 'queue'].includes(this.status)) return;
     this.emoteCooldown = EMOTE_COOLDOWN;
+    this.emoteBar.classList.remove('is-open');
     this.playerSay(SAYINGS[kind].text);
     if (kind === 'dance') this.danceTimer = DANCE_SECONDS;
     sounds.click();
@@ -1224,7 +1367,7 @@ export class ParkGame {
 
   // ---------- Pausa y salida ----------
 
-  pause() {
+  pause({ exitRide = false } = {}) {
     if (this.status === 'paused' || !this.loop) return;
     this.pausedFrom = this.status;
     this.status = 'paused';
@@ -1233,6 +1376,20 @@ export class ParkGame {
     Object.keys(this.keys).forEach((key) => (this.keys[key] = false));
     this.rideInput.action = false;
     this.joystick.reset();
+    this.emoteBar.classList.remove('is-open');
+    if (exitRide) {
+      showModal({
+        emoji: '🚪',
+        title: '¿Bajarte de la atracción?',
+        message: 'Si te bajas ahora, este viaje no da monedas.',
+        escapeIndex: 0,
+        actions: [
+          { label: 'Seguir montando ▶', variant: 'primary', onClick: () => this.resume() },
+          { label: '🚪 Bajarme', onClick: () => this.resumeAndExitRide() },
+        ],
+      });
+      return;
+    }
     const missions = describeMissions(todaysMissions(getGameData('park')));
     showModal({
       emoji: '⏸️',
@@ -1245,9 +1402,15 @@ export class ParkGame {
       escapeIndex: 0,
       actions: [
         { label: 'Continuar ▶', variant: 'primary', onClick: () => this.resume() },
+        this.pausedFrom === 'ride' ? { label: '🚪 Bajarme de la atracción', onClick: () => this.resumeAndExitRide() } : null,
         { label: 'Salir del parque', onClick: () => navigate('/parque') },
-      ],
+      ].filter(Boolean),
     });
+  }
+
+  resumeAndExitRide() {
+    this.resume();
+    this.exitRide();
   }
 
   resume() {
@@ -1260,6 +1423,7 @@ export class ParkGame {
   destroy() {
     this.timers.forEach((timer) => clearTimeout(timer));
     closeModal();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     if (!this.loop) {
       this.kit.dispose();
       this.renderer?.dispose();

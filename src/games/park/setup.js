@@ -2,7 +2,7 @@ import { el, navigate } from '../../ui/dom.js';
 import { getGameData, updateGameData } from '../../core/player.js';
 import { sounds } from '../../core/audio.js';
 import { trackEvent } from '../../core/analytics.js';
-import { OUTFIT_SLOTS, SKIN_TONES, currentOutfit, isOwned } from './outfits.js';
+import { HAIR_COLORS, OUTFIT_SLOTS, SKIN_TONES, currentOutfit, isOwned } from './outfits.js';
 import { PARK_WORLDS, UPCOMING_WORLDS, isWorldOpen } from './worlds.js';
 import { ALL_MISSIONS_BONUS, MISSION_COINS, describeMissions, todaysMissions } from './missions.js';
 
@@ -19,14 +19,19 @@ export function mountParkSetup(root) {
 
   const hatNode = el('span', { className: 'park-avatar__hat', attrs: { 'aria-hidden': 'true' } });
   const extraNode = el('span', { className: 'park-avatar__extra', attrs: { 'aria-hidden': 'true' } });
+  // El pelo va en tres capas: detrás de todo, encima de la cabeza y delante del cuerpo (trenzas).
   const preview = el('div', { className: 'park-avatar', attrs: { role: 'img', 'aria-label': 'Tu personaje' } }, [
-    hatNode,
-    el('span', { className: 'park-avatar__head' }),
+    el('span', { className: 'park-avatar__hair-back' }),
+    el('span', { className: 'park-avatar__head' }, [el('span', { className: 'park-avatar__face' })]),
+    el('span', { className: 'park-avatar__hair-top' }),
     el('span', { className: 'park-avatar__arm park-avatar__arm--left' }),
-    el('span', { className: 'park-avatar__body' }, [el('span', { className: 'park-avatar__stripe' })]),
-    el('span', { className: 'park-avatar__arm park-avatar__arm--right' }),
     el('span', { className: 'park-avatar__leg park-avatar__leg--left' }),
     el('span', { className: 'park-avatar__leg park-avatar__leg--right' }),
+    el('span', { className: 'park-avatar__body' }, [el('span', { className: 'park-avatar__stripe' })]),
+    el('span', { className: 'park-avatar__skirt' }),
+    el('span', { className: 'park-avatar__arm park-avatar__arm--right' }),
+    el('span', { className: 'park-avatar__hair-front' }),
+    hatNode,
     extraNode,
   ]);
   refreshers.push(() => {
@@ -35,6 +40,10 @@ export function mountParkSetup(root) {
     preview.style.setProperty('--shirt', look.shirt.color);
     preview.style.setProperty('--stripe', look.shirt.stripe ?? look.shirt.color);
     preview.style.setProperty('--pants', look.pants.color);
+    preview.style.setProperty('--hair', look.hairColor.color);
+    preview.dataset.hair = look.hair.kind;
+    preview.dataset.face = look.face.kind;
+    preview.dataset.bottom = look.pants.skirt ? (look.pants.tutu ? 'tutu' : 'skirt') : 'pants';
     hatNode.textContent = look.hat.kind === 'none' ? '' : look.hat.icon;
     extraNode.textContent = look.extra.kind === 'none' ? '' : look.extra.icon;
   });
@@ -84,31 +93,38 @@ export function mountParkSetup(root) {
     return button;
   }
 
-  const skinButtons = SKIN_TONES.map((tone) => {
-    const button = el('button', {
-      className: 'park-skin',
-      style: { background: tone.color },
-      attrs: { type: 'button', title: tone.name, 'aria-label': `Piel ${tone.name}` },
-      on: {
-        click: () => {
-          sounds.click();
-          wear('skin', tone.id);
-          refresh();
+  /** Círculos de color (piel y pelo): son gratis y se cambian con un toque. */
+  const colorButtons = (slot, tones, label) =>
+    tones.map((tone) => {
+      const button = el('button', {
+        className: 'park-skin',
+        style: { background: tone.color },
+        attrs: { type: 'button', title: tone.name, 'aria-label': `${label} ${tone.name}` },
+        on: {
+          click: () => {
+            sounds.click();
+            wear(slot, tone.id);
+            refresh();
+          },
         },
-      },
+      });
+      refreshers.push(() => {
+        const isSelected = currentOutfit(data)[slot].id === tone.id;
+        button.classList.toggle('is-selected', isSelected);
+        button.setAttribute('aria-pressed', String(isSelected));
+      });
+      return button;
     });
-    refreshers.push(() => {
-      const isSelected = currentOutfit(data).skin.id === tone.id;
-      button.classList.toggle('is-selected', isSelected);
-      button.setAttribute('aria-pressed', String(isSelected));
-    });
-    return button;
-  });
+  const colorRow = (title, buttons) => el('div', { className: 'park-colors' }, [el('small', { className: 'park-colors__title', text: title }), el('div', { className: 'park-skins' }, buttons)]);
 
   const wardrobe = el('section', { className: 'card setup__section park-wardrobe' }, [
     el('div', { className: 'shop__header' }, [el('h2', { className: 'setup__subtitle', text: '2. Vístete 👗' }), walletPill]),
     el('div', { className: 'park-wardrobe__layout' }, [
-      el('div', { className: 'park-wardrobe__preview' }, [preview, el('div', { className: 'park-skins' }, skinButtons)]),
+      el('div', { className: 'park-wardrobe__preview' }, [
+        preview,
+        colorRow('Piel', colorButtons('skin', SKIN_TONES, 'Piel')),
+        colorRow('Pelo', colorButtons('hairColor', HAIR_COLORS, 'Pelo')),
+      ]),
       el(
         'div',
         { className: 'park-wardrobe__shop' },

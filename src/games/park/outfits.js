@@ -30,6 +30,41 @@ export const PANTS = [
   { id: 'pants-white', name: 'Blanco', icon: '🤍', color: '#f3f0ff', price: 10 },
   { id: 'pants-green', name: 'Verde', icon: '🌿', color: '#3fae6a', price: 10 },
   { id: 'pants-gold', name: 'Dorado', icon: '✨', color: '#f2c230', price: 30 },
+  // `skirt`: falda (las piernas van con el color de la piel); `tutu` la hace más ancha.
+  { id: 'skirt-pink', name: 'Falda rosada', icon: '👗', color: '#ff8ac4', skirt: true, price: 0 },
+  { id: 'skirt-purple', name: 'Falda morada', icon: '👗', color: '#9b7bff', skirt: true, price: 0 },
+  { id: 'skirt-yellow', name: 'Falda amarilla', icon: '🌼', color: '#ffd93d', skirt: true, price: 10 },
+  { id: 'skirt-tutu', name: 'Tutú de bailarina', icon: '🩰', color: '#ffc4e1', skirt: true, tutu: true, price: 25 },
+];
+
+/** Peinados (`kind` decide la figura en 3D, ver avatar.js). Todos gratis: son para crear su personaje. */
+export const HAIR_STYLES = [
+  { id: 'hair-short', name: 'Corto', icon: '👦', kind: 'short', price: 0 },
+  { id: 'hair-long', name: 'Largo', icon: '👩', kind: 'long', price: 0 },
+  { id: 'hair-ponytail', name: 'Cola de caballo', icon: '🎀', kind: 'ponytail', price: 0 },
+  { id: 'hair-pigtails', name: 'Coletas', icon: '👧', kind: 'pigtails', price: 0 },
+  { id: 'hair-braids', name: 'Trenzas', icon: '🥨', kind: 'braids', price: 0 },
+  { id: 'hair-bun', name: 'Moño', icon: '🍡', kind: 'bun', price: 0 },
+  { id: 'hair-curly', name: 'Crespos', icon: '🌀', kind: 'curly', price: 0 },
+  { id: 'hair-none', name: 'Sin pelo', icon: '🥚', kind: 'none', price: 0 },
+];
+
+export const HAIR_COLORS = [
+  { id: 'hc-black', name: 'Negro', color: '#2b2120' },
+  { id: 'hc-brown', name: 'Castaño', color: '#6b4226' },
+  { id: 'hc-blond', name: 'Mono', color: '#f2c75c' },
+  { id: 'hc-red', name: 'Pelirrojo', color: '#c8552b' },
+  { id: 'hc-pink', name: 'Rosado', color: '#ff7eb9' },
+  { id: 'hc-purple', name: 'Morado', color: '#9b6bff' },
+  { id: 'hc-blue', name: 'Azul', color: '#4fa8ff' },
+];
+
+/** Detalles de la cara. */
+export const FACES = [
+  { id: 'face-smile', name: 'Sonrisa', icon: '🙂', kind: 'smile', price: 0 },
+  { id: 'face-lashes', name: 'Pestañas', icon: '😊', kind: 'lashes', price: 0 },
+  { id: 'face-freckles', name: 'Pecas', icon: '🤗', kind: 'freckles', price: 0 },
+  { id: 'face-blush', name: 'Mejillas rosadas', icon: '☺️', kind: 'blush', price: 0 },
 ];
 
 /** `kind` decide la figura en 3D (ver avatar.js). */
@@ -55,9 +90,12 @@ export const EXTRAS = [
   { id: 'wings', name: 'Alas de mariposa', icon: '🦋', kind: 'wings', color: '#ff8ac4', price: 90 },
 ];
 
+/** Lo que se elige en la tienda (`slot` = campo de `park.outfit`). La piel y el color del pelo van aparte. */
 export const OUTFIT_SLOTS = [
+  { slot: 'hair', title: '💇‍♀️ Peinado', items: HAIR_STYLES },
+  { slot: 'face', title: '😊 Cara', items: FACES },
   { slot: 'shirt', title: '👕 Camisetas', items: SHIRTS },
-  { slot: 'pants', title: '👖 Pantalones', items: PANTS },
+  { slot: 'pants', title: '👖 Pantalones y faldas', items: PANTS },
   { slot: 'hat', title: '🎩 En la cabeza', items: HATS },
   { slot: 'extra', title: '✨ Extras', items: EXTRAS },
 ];
@@ -75,6 +113,9 @@ export function currentOutfit(data) {
   };
   return {
     skin: findIn(SKIN_TONES, outfit.skin),
+    hair: pick(HAIR_STYLES, outfit.hair),
+    hairColor: findIn(HAIR_COLORS, outfit.hairColor),
+    face: pick(FACES, outfit.face),
     shirt: pick(SHIRTS, outfit.shirt),
     pants: pick(PANTS, outfit.pants),
     hat: pick(HATS, outfit.hat),
@@ -82,28 +123,43 @@ export function currentOutfit(data) {
   };
 }
 
+const LOOK_PARTS = {
+  skin: SKIN_TONES,
+  hair: HAIR_STYLES,
+  hairColor: HAIR_COLORS,
+  face: FACES,
+  shirt: SHIRTS,
+  pants: PANTS,
+  hat: HATS,
+  extra: EXTRAS,
+};
+export const LOOK_KEYS = Object.keys(LOOK_PARTS);
+
 /** Ids de la ropa puesta (lo que se comparte con las amigas al jugar juntas). */
 export function outfitIds(data) {
   const look = currentOutfit(data);
-  return { skin: look.skin.id, shirt: look.shirt.id, pants: look.pants.id, hat: look.hat.id, extra: look.extra.id };
+  return Object.fromEntries(LOOK_KEYS.map((key) => [key, look[key].id]));
 }
 
 /** Ropa a partir de ids que llegan de otra tablet (lo desconocido se cambia por lo básico). */
 export function outfitFromIds(ids = {}) {
-  return {
-    skin: findIn(SKIN_TONES, ids.skin),
-    shirt: findIn(SHIRTS, ids.shirt),
-    pants: findIn(PANTS, ids.pants),
-    hat: findIn(HATS, ids.hat),
-    extra: findIn(EXTRAS, ids.extra),
-  };
+  return Object.fromEntries(LOOK_KEYS.map((key) => [key, findIn(LOOK_PARTS[key], ids[key])]));
 }
 
-/** Apariencia al azar para los visitantes (solo colores básicos y algún sombrero). */
+/**
+ * Apariencia al azar para los visitantes (solo colores básicos y algún sombrero). El peinado y la cara
+ * salen del mismo número que la piel: así se usan los mismos números al azar que antes y los parques
+ * (que se construyen con una semilla fija) no cambian.
+ */
 export function randomLook(random) {
   const pick = (items) => items[Math.floor(random() * items.length)];
+  const roll = random();
+  const share = (items, factor) => items[Math.floor(((roll * factor) % 1) * items.length)];
   return {
-    skin: pick(SKIN_TONES),
+    skin: SKIN_TONES[Math.floor(roll * SKIN_TONES.length)],
+    hair: share(HAIR_STYLES.slice(0, -1), 97),
+    hairColor: share(HAIR_COLORS.slice(0, 4), 389),
+    face: share(FACES, 53),
     shirt: pick(SHIRTS),
     pants: pick(PANTS),
     hat: random() < 0.45 ? pick(HATS) : HATS[0],
