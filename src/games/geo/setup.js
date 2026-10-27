@@ -3,6 +3,7 @@ import { getGameData, updateGameData } from '../../core/player.js';
 import { sounds } from '../../core/audio.js';
 import { setupCanvas } from '../../core/canvas.js';
 import { GEO_LEVELS, GEO_WORLDS } from './levels.js';
+import { SPEEDS, getSpeed } from './physics.js';
 import { SKIN_GROUPS, drawPlayer, resolveSkin } from './shapes.js';
 import { ACHIEVEMENTS, MAX_STARS, countStars, findNewAchievements } from './achievements.js';
 
@@ -110,6 +111,25 @@ export function mountGeoSetup(root) {
       [el('strong', { text: label }), el('small', { text: hint })],
     ),
   );
+
+  const speedButtons = Object.values(SPEEDS).map((speed) =>
+    el(
+      'button',
+      {
+        className: 'mode-toggle__option',
+        attrs: { type: 'button', 'aria-pressed': String(getSpeed(data.speed).id === speed.id), 'data-speed': speed.id },
+        on: { click: () => chooseSpeed(speed.id) },
+      },
+      [el('strong', { text: `${speed.icon} ${speed.label}` }), el('small', { text: `×${speed.factor}` })],
+    ),
+  );
+
+  function chooseSpeed(speedId) {
+    sounds.click();
+    updateGameData('geo', { speed: speedId });
+    data = getGameData('geo');
+    speedButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.speed === speedId)));
+  }
 
   function startGame() {
     sounds.coin();
@@ -254,11 +274,12 @@ export function mountGeoSetup(root) {
           el('div', { className: 'geo-world-list' }, worldCards),
           el('p', {
             className: 'setup__note',
-            text: 'Llega a la meta en modo normal para abrir el siguiente nivel. Cada nivel esconde 3 monedas.',
+            text: 'Llega a la meta en modo normal (a cualquier velocidad) para abrir el siguiente nivel. Cada nivel esconde 3 monedas. Durante el juego, mantén Shift o ⚡ para el turbo.',
           }),
         ]),
         el('div', { className: 'geo-playbar' }, [
           el('div', { className: 'mode-toggle', attrs: { role: 'group', 'aria-label': 'Modo de juego' } }, modeButtons),
+          el('div', { className: 'mode-toggle', attrs: { role: 'group', 'aria-label': 'Velocidad' } }, speedButtons),
           el('button', {
             className: 'btn btn--primary btn--xl',
             text: '¡A saltar! 🔷',

@@ -878,3 +878,25 @@
     flex-basis: 100%;
   }
 }
+
+/* Turbo (Dino y Salto Geométrico) */
+
+.touch-btn--turbo {
+  background: linear-gradient(135deg, #ffd93d, #ff9f43);
+  color: var(--c-ink);
+  box-shadow: 0 6px 0 #e07b1f;
+  font-size: var(--fs-lg);
+}
+
+.touch-btn--turbo.is-pressed {
+  box-shadow: 0 2px 0 #e07b1f, 0 0 18px rgba(255, 159, 67, 0.7);
+}
+
+.touch-controls--geo .touch-btn--jump {
+  flex: 2;
+}
+
+.geo-playbar .mode-toggle {
+  flex-wrap: wrap;
+  justify-content: center;
+}

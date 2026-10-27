@@ -10,6 +10,18 @@ export const CEILING_Y = 7 * CELL;
 export const STEP_SECONDS = 1 / 240;
 export const MODES = ['cube', 'rocket', 'ball', 'plane'];
 
+/** Velocidades elegibles antes de jugar. El factor multiplica la velocidad del mundo. */
+export const SPEEDS = {
+  slow: { id: 'slow', label: 'Tranquila', icon: '🐢', factor: 0.85 },
+  normal: { id: 'normal', label: 'Normal', icon: '🐇', factor: 1 },
+  fast: { id: 'fast', label: 'Rápida', icon: '⚡', factor: 1.2 },
+};
+
+/** Multiplicador mientras se mantiene el turbo. */
+export const TURBO_FACTOR = 1.25;
+
+export const getSpeed = (id) => SPEEDS[id] ?? SPEEDS.normal;
+
 const INPUT_BUFFER_SECONDS = 0.1;
 const LANDING_TOLERANCE = 10;
 const HAZARD_INSET = 7;
@@ -252,7 +264,7 @@ function touchesHazard(state, nearby) {
 }
 
 /**
- * Avanza la simulación un paso fijo. input = { held, pressed }.
+ * Avanza la simulación un paso fijo. input = { held, pressed, turbo }.
  * Devuelve los eventos ocurridos (salto, moneda, portal, muerte, meta...) para sonidos y partículas.
  */
 export function step(state, level, input, dt = STEP_SECONDS) {
@@ -261,7 +273,7 @@ export function step(state, level, input, dt = STEP_SECONDS) {
   if (input.pressed) state.buffer = INPUT_BUFFER_SECONDS;
   state.time += dt;
 
-  state.x += level.speed * dt;
+  state.x += level.speed * (input.turbo ? TURBO_FACTOR : 1) * dt;
   let nearby = nearbyObjects(level, state.x);
   if (hitsWall(state, nearby)) {
     state.dead = true;

@@ -39,6 +39,13 @@ export const ACHIEVEMENTS = [
   { id: 'rocket', icon: '🚀', title: 'Piloto espacial', description: 'Termina un nivel con cohete.', check: (data) => completedWithMode(data, 'rocket') },
   { id: 'ball', icon: '🔵', title: 'Al revés', description: 'Termina un nivel con la pelota.', check: (data) => completedWithMode(data, 'ball') },
   { id: 'plane', icon: '✈️', title: 'Vuela alto', description: 'Termina un nivel con el avión.', check: (data) => completedWithMode(data, 'plane') },
+  {
+    id: 'light-speed',
+    icon: '💨',
+    title: 'Velocidad luz',
+    description: 'Termina un nivel en velocidad Rápida.',
+    check: (data, context) => Boolean(context.won && !context.practice && context.speed === 'fast'),
+  },
   { id: 'stylist', icon: '🎨', title: 'A la moda', description: 'Cambia tu apariencia 3 veces.', check: (data) => data.skinChanges >= 3 },
   { id: 'jumper', icon: '🦘', title: 'Saltarina', description: 'Salta 500 veces.', check: (data) => data.totalJumps >= 500 },
   { id: 'persistent', icon: '💪', title: 'Nunca me rindo', description: 'Haz 100 intentos.', check: (data) => data.totalAttempts >= 100 },

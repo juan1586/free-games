@@ -4,15 +4,15 @@ Sitio de juegos para niñas y niños, sin anuncios ni servidor. Todo se guarda e
 
 - **🦖 Dino Corre** — elige entre 5 dinosaurios, ponle nombre y corre por 5 mundos (Desierto, Selva, Nieve, Volcán y Espacio). Llega a la meta de distancia para desbloquear el siguiente mundo. Monedas, día/noche y velocidad creciente.
 - **🧱 Bloques Mágicos** — Tetris con 5 mundos temáticos (Arcoíris, Océano, Caramelos, Galaxia y Bosque Mágico). Cada mundo tiene una meta de líneas y da hasta 3 estrellas según los puntos. Pieza fantasma, pieza guardada y vista de las siguientes.
-- **🔷 Salto Geométrico** — inspirado en Geometry Dash: una figura avanza sola y tú saltas al ritmo de la música. Portales que la convierten en cohete, pelota (cambia la gravedad) o avión de papel. 5 mundos × 3 niveles diseñados a mano, 3 monedas escondidas por nivel, modo práctica con banderas, vestidor (figuras, colores, estelas y caritas que se desbloquean con estrellas) y 12 retos.
+- **🔷 Salto Geométrico** — inspirado en Geometry Dash: una figura avanza sola y tú saltas al ritmo de la música. Portales que la convierten en cohete, pelota (cambia la gravedad) o avión de papel. 5 mundos × 3 niveles diseñados a mano, 3 monedas escondidas por nivel, modo práctica con banderas, vestidor (figuras, colores, estelas y caritas que se desbloquean con estrellas), 3 velocidades (🐢 Tranquila, 🐇 Normal, ⚡ Rápida), turbo y 13 retos.
 - **👧 Varios jugadores** en el mismo navegador, cada uno con su avatar, récords y mundos desbloqueados.
 
 ## Controles
 
 | Juego | Teclado | Pantalla táctil |
 | --- | --- | --- |
-| Dino | `Espacio` / `↑` saltar · `↓` agacharse (en el aire, cae rápido) · `P` pausa | Tocar = saltar · deslizar abajo = agacharse · botones en pantalla |
-| Salto Geométrico | `Espacio` / `↑` / clic saltar (mantener = cohete sube / saltar seguido) · `P` pausa | Tocar o mantener la pantalla · botón en pantalla |
+| Dino | `Espacio` / `↑` saltar · `↓` agacharse (en el aire, cae rápido) · `Shift` turbo (metros dobles en puntos) · `P` pausa | Tocar = saltar · deslizar abajo = agacharse · botones en pantalla (⚡ turbo) |
+| Salto Geométrico | `Espacio` / `↑` / clic saltar (mantener = cohete sube / saltar seguido) · `Shift` turbo · `P` pausa | Tocar o mantener la pantalla · botones en pantalla (⚡ turbo) |
 | Bloques | `←` `→` mover · `↑` / `X` girar · `Z` girar al revés · `↓` bajar · `Espacio` soltar · `C` guardar · `P` pausa | Tocar = girar · deslizar = mover / soltar · botones en pantalla |
 
 ## Desarrollo
@@ -24,6 +24,7 @@ npm install
 npm run dev       # http://localhost:5173/free-games/
 npm run build     # genera dist/
 npm run preview   # sirve dist/ con la misma ruta base que GitHub Pages
+npm run check:levels  # verifica que todos los niveles de Salto Geométrico se pueden pasar
 ```
 
 Estructura:

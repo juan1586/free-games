@@ -13,6 +13,7 @@ const createDefaultGames = () => ({
     unlockedLevel: 0,
     levels: {},
     skin: { shape: 'cube', color: 'grape', trail: 'none', face: 'happy' },
+    speed: 'normal',
     achievements: [],
     totalAttempts: 0,
     totalJumps: 0,

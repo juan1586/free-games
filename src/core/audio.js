@@ -50,6 +50,7 @@ export const sounds = {
   pad: () => playTone({ frequency: 200, endFrequency: 900, duration: 0.2, type: 'triangle', volume: 0.1 }),
   flip: () => playTone({ frequency: 520, endFrequency: 260, duration: 0.1, type: 'triangle', volume: 0.07 }),
   checkpoint: () => playMelody([[880, 0, 0.06], [1175, 0.06, 0.1]], 'triangle'),
+  turbo: () => playTone({ frequency: 180, endFrequency: 720, duration: 0.25, type: 'sawtooth', volume: 0.05 }),
   achievement: () => playMelody([[659, 0], [784, 0.1], [988, 0.2], [1319, 0.3], [1568, 0.42, 0.35]]),
 };
 

@@ -6,7 +6,19 @@ import { getGameData, updateGameData } from '../../core/player.js';
 import { createBanner, createGameHeader } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
-import { CEILING_Y, PLAYER_SIZE, STEP_SECONDS, cloneState, createState, isSafeSpot, loadLevel, progressOf, step } from './physics.js';
+import {
+  CEILING_Y,
+  PLAYER_SIZE,
+  STEP_SECONDS,
+  TURBO_FACTOR,
+  cloneState,
+  createState,
+  getSpeed,
+  isSafeSpot,
+  loadLevel,
+  progressOf,
+  step,
+} from './physics.js';
 import { GEO_LEVELS } from './levels.js';
 import { PORTAL_STYLES, drawFinish, drawObjects } from './obstacles.js';
 import { RAINBOW, drawPlayer, resolveSkin } from './shapes.js';
@@ -28,6 +40,8 @@ const TRAIL_SPAWN_SECONDS = 0.045;
 const DECOR_SPAN = 1200;
 const COINS_PER_LEVEL = 3;
 const WIN_FLY_UP_SPEED = 160;
+const SPEED_LINE_COUNT = 14;
+const TURBO_LINE_SPEED = 1400;
 // Evita que el redondeo de coma flotante dé 3 o 5 pasos de física por fotograma en lugar de 4.
 const STEP_EPSILON = 1e-9;
 
@@ -47,7 +61,10 @@ export class GeoGame {
     this.palette = this.world.palette;
     this.practice = practice;
     this.skin = resolveSkin(data.skin);
-    this.level = loadLevel(this.definition, this.world.speed);
+    this.speed = getSpeed(data.speed);
+    this.level = loadLevel(this.definition, this.world.speed * this.speed.factor);
+    this.turboHeld = false;
+    this.turboAmount = 0;
     const progress = { ...createLevelProgress(), ...data.levels[this.definition.id] };
     this.savedCoins = [...progress.coins];
     this.best = progress.best;
@@ -65,7 +82,9 @@ export class GeoGame {
       spin: random(-0.8, 0.8),
       phase: random(0, Math.PI * 2),
     }));
-    this.music = createMusicLoop(this.world.music);
+    this.musicBpm = Math.round(this.world.music.bpm * this.speed.factor);
+    this.music = createMusicLoop({ ...this.world.music, bpm: this.musicBpm });
+    this.speedLines = Array.from({ length: SPEED_LINE_COUNT }, () => ({ x: random(0, VIEW_WIDTH), y: random(20, FLOOR_Y - 10), length: random(40, 110) }));
     this.showBanner = createBanner(this.stage);
 
     this.loop = createGameLoop({
@@ -83,7 +102,8 @@ export class GeoGame {
   }
 
   buildDom(root) {
-    const title = `${this.world.emoji} ${this.definition.label} ${this.definition.name}`;
+    const speedTag = this.speed.id === 'normal' ? '' : ` ${this.speed.icon}`;
+    const title = `${this.world.emoji} ${this.definition.label} ${this.definition.name}${speedTag}`;
     this.header = createGameHeader({
       title: this.practice ? `🚩 ${title}` : title,
       backPath: '/geo',
@@ -105,36 +125,45 @@ export class GeoGame {
       el('span', {
         text: this.practice
           ? 'Modo práctica: aparecen banderas 🚩 y vuelves a la última al chocar.'
-          : 'Mantén pulsado para saltar seguido · P: pausa',
+          : 'Mantén pulsado para saltar seguido · Shift / ⚡: turbo · P: pausa',
       }),
     ]);
     this.stage = el('div', { className: `stage stage--geo geo-world--${this.world.id}` }, [this.canvas, this.hint]);
 
     this.jumpButton = el('button', { className: 'touch-btn touch-btn--jump', text: '⬆️ Saltar', attrs: { type: 'button' } });
-    const touchControls = el('div', { className: 'touch-controls touch-controls--geo' }, [this.jumpButton]);
+    this.turboButton = el('button', { className: 'touch-btn touch-btn--turbo', text: '⚡ Turbo', attrs: { type: 'button' } });
+    const touchControls = el('div', { className: 'touch-controls touch-controls--geo' }, [this.turboButton, this.jumpButton]);
 
     root.append(el('main', { className: 'page game-page' }, [this.header.element, this.stage, touchControls]));
   }
 
   bindControls() {
     const release = () => (this.held = false);
-    const handleBlur = () => release();
+    const handleBlur = () => {
+      release();
+      this.setTurbo(false);
+    };
     window.addEventListener('blur', handleBlur);
 
     return [
       bindKeyboard(
-        { jump: ['Space', 'ArrowUp', 'KeyW', 'Enter'], pause: ['KeyP', 'Escape'] },
+        { jump: ['Space', 'ArrowUp', 'KeyW', 'Enter'], turbo: ['ShiftLeft', 'ShiftRight'], pause: ['KeyP', 'Escape'] },
         {
           onPress: (action, repeat) => {
             if (repeat) return;
             if (action === 'jump') this.press();
+            if (action === 'turbo') this.setTurbo(true);
             if (action === 'pause') this.pause();
           },
-          onRelease: (action) => action === 'jump' && release(),
+          onRelease: (action) => {
+            if (action === 'jump') release();
+            if (action === 'turbo') this.setTurbo(false);
+          },
         },
       ),
       bindHoldButton(this.canvas, { onPress: () => this.press(), onRelease: release }),
       bindHoldButton(this.jumpButton, { onPress: () => this.press(), onRelease: release }),
+      bindHoldButton(this.turboButton, { onPress: () => this.setTurbo(true), onRelease: () => this.setTurbo(false) }),
       () => window.removeEventListener('blur', handleBlur),
     ];
   }
@@ -149,6 +178,11 @@ export class GeoGame {
     if (this.status !== 'running') return;
     this.held = true;
     this.pressQueued = true;
+  }
+
+  setTurbo(isOn) {
+    if (isOn && !this.turboHeld && this.status === 'running') sounds.turbo();
+    this.turboHeld = isOn;
   }
 
   /** Prepara un intento desde el principio o desde la última bandera de práctica. */
@@ -177,6 +211,7 @@ export class GeoGame {
     if (this.status !== 'running' && this.status !== 'ready') return;
     this.pausedFrom = this.status;
     this.status = 'paused';
+    this.turboHeld = false;
     this.loop.stop();
     this.music.stop();
     const otherMode = this.practice ? 'normal' : 'práctica 🚩';
@@ -221,12 +256,14 @@ export class GeoGame {
     this.updateParticles(delta);
     if (this.shakeTime > 0) this.shakeTime -= delta;
     if (this.flash) this.flash.life -= delta;
+    const turboTarget = this.turboHeld && this.status === 'running' ? 1 : 0;
+    this.turboAmount += (turboTarget - this.turboAmount) * Math.min(1, delta * 10);
 
     if (this.status === 'running') {
       this.accumulator += delta;
       while (this.accumulator >= STEP_SECONDS - STEP_EPSILON && this.status === 'running') {
         this.accumulator -= STEP_SECONDS;
-        const events = step(this.state, this.level, { held: this.held, pressed: this.pressQueued }, STEP_SECONDS);
+        const events = step(this.state, this.level, { held: this.held, pressed: this.pressQueued, turbo: this.turboHeld }, STEP_SECONDS);
         this.pressQueued = false;
         events.forEach((event) => this.handleEvent(event));
       }
@@ -361,7 +398,12 @@ export class GeoGame {
       this.flushTotals({ attempts: 1 });
     }
     this.updateHud();
-    const achievements = findNewAchievements(getGameData('geo'), { won: true, practice: this.practice, attempts: this.attempts });
+    const achievements = findNewAchievements(getGameData('geo'), {
+      won: true,
+      practice: this.practice,
+      attempts: this.attempts,
+      speed: this.speed.id,
+    });
     this.saveAchievements(achievements);
 
     this.timer = setTimeout(() => {
@@ -482,7 +524,7 @@ export class GeoGame {
       if (!state.onGround) this.angle += CUBE_SPIN_SPEED * delta;
       else this.angle += (Math.round(this.angle / quarter) * quarter - this.angle) * Math.min(1, delta * 22);
     } else if (state.mode === 'ball') {
-      if (this.status === 'running') this.angle += ((this.level.speed * delta) / (PLAYER_SIZE / 2)) * state.gravityDir;
+      if (this.status === 'running') this.angle += ((this.currentSpeed * delta) / (PLAYER_SIZE / 2)) * state.gravityDir;
     }
     const targetTilt = state.mode === 'rocket' || state.mode === 'plane' ? clamp(-Math.atan2(state.vy, this.level.speed), -MAX_TILT, MAX_TILT) : 0;
     this.tilt += (targetTilt - this.tilt) * Math.min(1, delta * 14);
@@ -601,6 +643,11 @@ export class GeoGame {
 
   // ---------- Dibujo ----------
 
+  /** Velocidad horizontal actual (incluye el turbo) para animaciones. */
+  get currentSpeed() {
+    return this.level.speed * (this.turboHeld && this.status === 'running' ? TURBO_FACTOR : 1);
+  }
+
   get view() {
     const cameraX = this.status === 'won' ? this.winCameraX : this.state.x - PLAYER_SCREEN_X;
     return { x: cameraX, y: this.cameraY, floor: FLOOR_Y };
@@ -609,7 +656,7 @@ export class GeoGame {
   /** Pulso que late con la música para que el fondo "baile". */
   get beat() {
     if (this.status !== 'running') return 0;
-    const phase = (this.time * this.world.music.bpm) / 60;
+    const phase = (this.time * this.musicBpm) / 60;
     return (1 - (phase % 1)) ** 3;
   }
 
@@ -621,6 +668,7 @@ export class GeoGame {
 
     this.drawSky();
     this.drawDecor(view);
+    this.drawSpeedLines();
     this.drawCeiling(view);
     drawObjects(ctx, this.level.objects, {
       view,
@@ -856,6 +904,31 @@ export class GeoGame {
         ctx.fill();
       }
     });
+    ctx.globalAlpha = 1;
+  }
+
+  /** Rayas de velocidad y brillo en los bordes mientras el turbo está activo. */
+  drawSpeedLines() {
+    if (this.turboAmount < 0.03) return;
+    const ctx = this.ctx;
+    const shift = this.time * TURBO_LINE_SPEED;
+    ctx.globalAlpha = this.turboAmount * 0.55;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    this.speedLines.forEach((line) => {
+      const x = VIEW_WIDTH - wrap(line.x + shift, VIEW_WIDTH + line.length);
+      ctx.moveTo(x, line.y);
+      ctx.lineTo(x + line.length, line.y);
+    });
+    ctx.stroke();
+    const glow = ctx.createLinearGradient(0, 0, 120, 0);
+    glow.addColorStop(0, 'rgba(255, 159, 67, 0.45)');
+    glow.addColorStop(1, 'rgba(255, 159, 67, 0)');
+    ctx.globalAlpha = this.turboAmount;
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, 120, VIEW_HEIGHT);
     ctx.globalAlpha = 1;
   }
 

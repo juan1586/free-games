@@ -26,6 +26,10 @@ const GAME_OVER_DELAY_MS = 750;
 const HITBOX_PADDING = 7;
 const FLYER_CHANCE = 0.28;
 const COIN_ROW_CHANCE = 0.45;
+/** Con el turbo al máximo se corre un 50 % más rápido y esos metros cuentan doble en los puntos. */
+const TURBO_BOOST = 0.5;
+const TURBO_EASE = 8;
+const SPEED_LINE_COUNT = 12;
 
 const HIGH_FLYER_BOTTOM = GROUND_Y - 44;
 const LOW_FLYER_BOTTOM = GROUND_Y - 6;
@@ -50,6 +54,7 @@ export class DinoGame {
     this.buildDom(root);
     this.ctx = setupCanvas(this.canvas, VIEW_WIDTH, VIEW_HEIGHT);
     this.stars = Array.from({ length: 60 }, () => ({ x: random(0, VIEW_WIDTH), y: random(0, GROUND_Y - 60), r: random(0.6, 1.8), t: random(0, 6) }));
+    this.speedLines = Array.from({ length: SPEED_LINE_COUNT }, () => ({ x: random(0, VIEW_WIDTH), y: random(30, GROUND_Y - 10), length: random(40, 100) }));
     this.clouds = Array.from({ length: 5 }, (_, index) => ({ x: index * 190 + random(0, 80), y: random(30, 110), s: random(0.7, 1.2) }));
 
     this.loop = createGameLoop({
@@ -81,14 +86,15 @@ export class DinoGame {
     });
     this.hint = el('div', { className: 'stage__hint' }, [
       el('strong', { text: '¡Toca o pulsa Espacio para empezar!' }),
-      el('span', { text: '⬆️ / Espacio: saltar · ⬇️: agacharse · P: pausa' }),
+      el('span', { text: '⬆️ / Espacio: saltar · ⬇️: agacharse · Shift / ⚡: turbo (¡puntos dobles!) · P: pausa' }),
     ]);
     const stage = el('div', { className: `stage stage--dino world--${this.world.id}` }, [this.canvas, this.hint]);
     this.showBanner = createBanner(stage);
 
     this.jumpButton = el('button', { className: 'touch-btn touch-btn--jump', text: '⬆️ Saltar', attrs: { type: 'button' } });
     this.duckButton = el('button', { className: 'touch-btn touch-btn--duck', text: '⬇️ Agachar', attrs: { type: 'button' } });
-    const touchControls = el('div', { className: 'touch-controls touch-controls--dino' }, [this.duckButton, this.jumpButton]);
+    this.turboButton = el('button', { className: 'touch-btn touch-btn--turbo', text: '⚡ Turbo', attrs: { type: 'button' } });
+    const touchControls = el('div', { className: 'touch-controls touch-controls--dino' }, [this.duckButton, this.turboButton, this.jumpButton]);
 
     root.append(el('main', { className: 'page game-page' }, [this.header.element, stage, touchControls]));
   }
@@ -97,15 +103,17 @@ export class DinoGame {
     const pressAction = (action) => {
       if (action === 'jump') this.requestJump();
       if (action === 'duck') this.input.duckHeld = true;
+      if (action === 'turbo') this.setTurbo(true);
       if (action === 'pause') this.pause();
     };
     const releaseAction = (action) => {
       if (action === 'duck') this.input.duckHeld = false;
+      if (action === 'turbo') this.setTurbo(false);
     };
 
     return [
       bindKeyboard(
-        { jump: ['Space', 'ArrowUp', 'KeyW'], duck: ['ArrowDown', 'KeyS'], pause: ['KeyP', 'Escape'] },
+        { jump: ['Space', 'ArrowUp', 'KeyW'], duck: ['ArrowDown', 'KeyS'], turbo: ['ShiftLeft', 'ShiftRight'], pause: ['KeyP', 'Escape'] },
         { onPress: (action, repeat) => !repeat && pressAction(action), onRelease: releaseAction },
       ),
       bindTouchGestures(this.canvas, {
@@ -116,6 +124,7 @@ export class DinoGame {
         },
       }),
       bindHoldButton(this.jumpButton, { onPress: () => this.requestJump() }),
+      bindHoldButton(this.turboButton, { onPress: () => this.setTurbo(true), onRelease: () => this.setTurbo(false) }),
       bindHoldButton(this.duckButton, {
         onPress: () => (this.input.duckHeld = true),
         onRelease: () => (this.input.duckHeld = false),
@@ -137,6 +146,9 @@ export class DinoGame {
     this.confetti = [];
     this.nextSpawnPx = 500;
     this.coinsThisRun = 0;
+    this.turboHeld = false;
+    this.turboAmount = 0;
+    this.turboBonusPx = 0;
     this.worldCleared = false;
     this.shakeTime = 0;
     this.progressSaved = false;
@@ -148,8 +160,17 @@ export class DinoGame {
     return Math.floor(this.distancePx * METERS_PER_PIXEL);
   }
 
+  get effectiveSpeed() {
+    return this.speed * (1 + TURBO_BOOST * this.turboAmount);
+  }
+
+  setTurbo(isOn) {
+    if (isOn && !this.turboHeld && this.status === 'running') sounds.turbo();
+    this.turboHeld = isOn;
+  }
+
   get score() {
-    return this.meters + this.coinsThisRun * COIN_VALUE;
+    return this.meters + this.coinsThisRun * COIN_VALUE + Math.floor(this.turboBonusPx * METERS_PER_PIXEL);
   }
 
   requestJump() {
@@ -165,6 +186,7 @@ export class DinoGame {
     if (this.status !== 'running' && this.status !== 'ready') return;
     this.pausedFrom = this.status;
     this.status = 'paused';
+    this.turboHeld = false;
     this.loop.stop();
     showModal({
       emoji: '⏸️',
@@ -201,7 +223,10 @@ export class DinoGame {
     const { start, max } = this.world.speed;
     const acceleration = (max - start) / (this.world.goal * 1.4);
     this.speed = Math.min(max, start + this.meters * acceleration);
-    const step = this.speed * delta;
+    const turboTarget = this.turboHeld ? 1 : 0;
+    this.turboAmount += (turboTarget - this.turboAmount) * Math.min(1, delta * TURBO_EASE);
+    const step = this.effectiveSpeed * delta;
+    this.turboBonusPx += step * this.turboAmount;
     this.distancePx += step;
 
     this.updatePlayer(delta);
@@ -260,7 +285,7 @@ export class DinoGame {
     this.obstacles.push({ kind, x: spawnX, y: bottom - h, w, h, flyer: isFlyer });
 
     // El hueco se mide en segundos de reacción para que siga siendo justo a cualquier velocidad.
-    const gap = this.speed * random(1.05, 1.9);
+    const gap = this.effectiveSpeed * random(1.05, 1.9);
     this.nextSpawnPx = this.distancePx + gap;
 
     if (Math.random() < COIN_ROW_CHANCE) this.spawnCoinRow(spawnX + gap / 2);
@@ -470,6 +495,7 @@ export class DinoGame {
     this.drawGround();
     this.drawCoins();
     this.obstacles.forEach((obstacle) => drawObstacle(ctx, obstacle.kind, obstacle.x, obstacle.y, palette, this.frame));
+    this.drawTurbo();
     this.drawPlayer();
     this.drawParticles();
     this.drawWeather();
@@ -578,6 +604,36 @@ export class DinoGame {
       ctx.ellipse(coin.x, coin.y + bob, COIN_RADIUS * (0.4 + squash * 0.6) * 0.65, COIN_RADIUS * 0.65, 0, 0, Math.PI * 2);
       ctx.fill();
     });
+  }
+
+  /** Rayas de velocidad y estela de fuego detrás del dino mientras el turbo está activo. */
+  drawTurbo() {
+    if (this.turboAmount < 0.03) return;
+    const ctx = this.ctx;
+    const shift = this.distancePx * 1.5;
+    ctx.globalAlpha = this.turboAmount * 0.6;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    this.speedLines.forEach((line) => {
+      const span = VIEW_WIDTH + line.length;
+      const x = VIEW_WIDTH - ((((line.x + shift) % span) + span) % span);
+      ctx.moveTo(x, line.y);
+      ctx.lineTo(x + line.length, line.y);
+    });
+    ctx.stroke();
+
+    const centerY = GROUND_Y - this.player.height - 30;
+    const flame = ctx.createRadialGradient(DINO_X, centerY, 4, DINO_X, centerY, 46);
+    flame.addColorStop(0, 'rgba(255, 217, 61, 0.9)');
+    flame.addColorStop(1, 'rgba(255, 120, 40, 0)');
+    ctx.globalAlpha = this.turboAmount * (0.75 + Math.sin(this.time * 30) * 0.15);
+    ctx.fillStyle = flame;
+    ctx.beginPath();
+    ctx.ellipse(DINO_X - 4, centerY, 46, 26, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   drawPlayer() {
