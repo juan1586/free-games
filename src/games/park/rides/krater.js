@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { sounds } from '../../../core/audio.js';
 import { buildCoasterTrain } from '../props.js';
+import { createMateRider, mateReacts } from '../riders.js';
 import { DROP_SLOPE, kraterSpeed, moveTrain } from '../world3d.js';
 
 const LAPS = 2;
@@ -16,11 +17,20 @@ const MY_SEAT = { car: 1, seat: 0 };
 const EYE = new THREE.Vector3(-0.38, 1.45, 0.1);
 /** El tren se coloca por el vagón de delante: así la jugadora va un vagón más atrás. */
 const FRONT_OFFSET = 2.8;
+/** Dónde se sientan las amigas: en el vagón de delante (para verlas gritar) y luego a tu lado. */
+const MATE_SEATS = ['0-1', '0-0', '1-1'];
 
-export function createKraterRide({ kit, park, scene, random, announce }) {
+export function createKraterRide({ kit, park, scene, random, announce, mates }) {
   const { krater } = park;
   krater.train.visible = false;
-  const train = buildCoasterTrain(kit, random, { emptySeat: MY_SEAT, colors: [0xffd93d, 0xff5fa2, 0x5ab0ff] });
+  const mateRiders = new Map();
+  const placed = new Map();
+  mates.slice(0, MATE_SEATS.length).forEach((mate, index) => {
+    const rider = createMateRider(kit, random, mate, { scale: 0.58, seatY: 0.6, bubbleHeight: 0.36 });
+    mateRiders.set(mate.id, rider);
+    placed.set(MATE_SEATS[index], rider);
+  });
+  const train = buildCoasterTrain(kit, random, { emptySeat: MY_SEAT, placed, colors: [0xffd93d, 0xff5fa2, 0x5ab0ff] });
   scene.add(train.group);
   const myCar = train.cars[MY_SEAT.car];
 
@@ -70,6 +80,11 @@ export function createKraterRide({ kit, park, scene, random, announce }) {
         }
         feedbackTimer = 0.8;
       }
+    },
+
+    onMateSay(id, kind) {
+      const rider = mateRiders.get(id);
+      if (rider && kind === 'scream') mateReacts(rider, '😱 ¡AAAAH!', { cheer: true });
     },
 
     status: () => `😱 Gritos: ${screams} · 🔁 Vuelta ${Math.min(LAPS, Math.floor(traveled / krater.length) + 1)}/${LAPS}`,

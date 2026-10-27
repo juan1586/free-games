@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { sounds } from '../../../core/audio.js';
 import { at } from '../kit.js';
+import { createMateRider, mateReacts } from '../riders.js';
+import { SAYINGS } from '../race.js';
 
 const RIDE_SPEED = 0.2;
 const BALLOONS = 7;
@@ -16,7 +18,7 @@ const PHOTO_ANGLE = 0.14;
 const PHOTO_COOLDOWN = 0.8;
 const BALLOON_COLORS = [0xff5f5f, 0xffd93d, 0x4dd4ac, 0x5ab0ff, 0xb57bff, 0xff8ac4, 0xff9f43];
 
-export function createRuedaRide({ kit, park, scene, random }) {
+export function createRuedaRide({ kit, park, scene, random, announce, mates }) {
   const { wheel } = park;
   const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 500);
   const normalSpeed = wheel.speed;
@@ -30,6 +32,15 @@ export function createRuedaRide({ kit, park, scene, random }) {
 
   // Los que iban en esa cabina se bajan: ahora va la jugadora.
   cabin.userData.riders.forEach((rider) => (rider.root.visible = false));
+  // Las amigas van en la misma cabina, sentadas enfrente (mirándote).
+  const mateRiders = new Map();
+  mates.slice(0, 2).forEach((mate, index) => {
+    const rider = createMateRider(kit, random, mate, { scale: 0.42, seatY: -1.65, bubbleHeight: 0.35 });
+    rider.root.position.set(index === 0 ? 0.6 : -0.6, rider.root.position.y, 0.6);
+    rider.root.rotation.y = Math.PI;
+    cabin.add(rider.root);
+    mateRiders.set(mate.id, rider);
+  });
 
   const balloons = Array.from({ length: BALLOONS }, (_, index) => {
     const balloon = new THREE.Group();
@@ -72,6 +83,7 @@ export function createRuedaRide({ kit, park, scene, random }) {
       best.visible = false;
       caught += 1;
       message = '📸 ¡Globo cazado!';
+      announce('photo');
       sounds.pop();
     } else {
       message = '📸 ¡Uy, no salió ningún globo!';
@@ -102,15 +114,21 @@ export function createRuedaRide({ kit, park, scene, random }) {
         takePhoto();
       }
 
+      mateRiders.forEach((rider) => rider.update(delta));
       balloons.forEach((balloon) => {
         balloon.position.y = balloon.userData.baseY + Math.sin(turned * 4 + balloon.userData.phase) * 0.8;
       });
 
       cabin.getWorldPosition(camera.position);
       camera.position.y -= 1.05;
-      camera.position.z -= 0.2;
+      camera.position.z -= 0.6;
       const height = camera.position.y;
       camera.lookAt(camera.position.x + Math.sin(look) * 20, height - 2 - height * 0.1, camera.position.z + Math.cos(look) * 20);
+    },
+
+    onMateSay(id, kind) {
+      const rider = mateRiders.get(id);
+      if (rider && kind === 'photo') mateReacts(rider, SAYINGS.photo.text, { cheer: true });
     },
 
     status: () => `🎈 Globos: ${caught}/${BALLOONS} · 🎡 ${Math.min(100, Math.round((turned / (Math.PI * 2)) * 100))} %`,
@@ -128,6 +146,7 @@ export function createRuedaRide({ kit, park, scene, random }) {
     dispose() {
       balloons.forEach((balloon) => scene.remove(balloon));
       cabin.userData.riders.forEach((rider) => (rider.root.visible = true));
+      mateRiders.forEach((rider) => cabin.remove(rider.root));
       wheel.speed = normalSpeed;
     },
   };

@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { sounds } from '../../../core/audio.js';
 import { NAMES } from '../crowd.js';
 import { buildBumperCar } from '../props.js';
-import { createRider, pickLine } from '../riders.js';
+import { createMateRider, createRider, pickLine } from '../riders.js';
 
 const DURATION = 30;
 const CRUISE = 3.6;
@@ -18,8 +18,18 @@ const BUMP_MIN_SPEED = 2;
 const BUMP_COOLDOWN = 0.8;
 const MAX_BUMP_COINS = 18;
 const HIT_LINES = ['¡Oye! 😤', '¡Jajaja! 😂', '¡Ayyy! 😵', '¡Te voy a alcanzar! 😜', '¡Pum! 💥'];
+const RIVAL_COLORS = [0x5ab0ff, 0x4dd4ac, 0xffd93d, 0xb57bff, 0xff9f43];
+const MATE_COLORS = [0x7b5cff, 0x2fc4b2, 0xff7a45];
+const MATE_FOLLOW_RATE = 10;
+/** Puntos de salida (uno por jugadora, en el mismo orden en todas las tablets). */
+const STARTS = [
+  { x: 0, z: 4, heading: Math.PI },
+  { x: 0, z: -4, heading: 0 },
+  { x: 4, z: 0, heading: -Math.PI / 2 },
+  { x: -4, z: 0, heading: Math.PI / 2 },
+];
 
-export function createChoconesRide({ kit, park, scene, look, random }) {
+export function createChoconesRide({ kit, park, scene, look, random, mates, myId }) {
   const { bumper } = park;
   bumper.idle = false;
   bumper.group.visible = false;
@@ -35,16 +45,44 @@ export function createChoconesRide({ kit, park, scene, look, random }) {
     return { mesh, driver, x, z, heading, speed: 0, vx: 0, vz: 0, spin: 0, cooldown: 0, turn: 0 };
   };
 
-  const player = makeCar(0xff5fa2, 0, 4, Math.PI, createRider(kit, random, { scale: 0.62, seatY: 0.95, look }));
-  // Rivales con nombre, para saber a quién chocaste.
+  // Cada jugadora sale de su sitio (ordenadas por id, igual en todas las tablets).
+  const order = [myId, ...mates.map((mate) => mate.id)].sort();
+  const start = (id) => STARTS[order.indexOf(id) % STARTS.length];
+  const me = start(myId);
+  const player = makeCar(0xff5fa2, me.x, me.z, me.heading, createRider(kit, random, { scale: 0.62, seatY: 0.95, look }));
+  // Las amigas: su carro se mueve con lo que mandan desde su tablet.
+  const mateCars = new Map(
+    mates.slice(0, MATE_COLORS.length).map((mate, index) => {
+      const spot = start(mate.id);
+      const car = makeCar(MATE_COLORS[index], spot.x, spot.z, spot.heading, createMateRider(kit, random, mate, { scale: 0.62, seatY: 0.95 }));
+      car.target = { x: spot.x, z: spot.z, heading: spot.heading };
+      return [mate.id, car];
+    }),
+  );
+  // Rivales con nombre, para saber a quién chocaste (menos si hay amigas).
   const firstName = Math.floor(random() * NAMES.length);
-  const rivals = [0x5ab0ff, 0x4dd4ac, 0xffd93d, 0xb57bff, 0xff9f43].map((color, index) => {
-    const angle = (index / 5) * Math.PI * 2;
+  const rivals = RIVAL_COLORS.slice(0, RIVAL_COLORS.length - mateCars.size).map((color, index) => {
+    const angle = (index / 5) * Math.PI * 2 + 0.6;
     const name = NAMES[(firstName + index) % NAMES.length];
     const driver = createRider(kit, random, { scale: 0.62, seatY: 0.95, name });
     return makeCar(color, Math.sin(angle) * 5, Math.cos(angle) * 5 - 1, random() * Math.PI * 2, driver);
   });
   const cars = [player, ...rivals];
+
+  /** Choque contra el carro de una amiga: solo se mueve el mío (el suyo lo mueve su tablet). */
+  function bounceOffMate(car) {
+    const dx = car.x - player.x;
+    const dz = car.z - player.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance >= CAR_RADIUS * 2 || distance < 1e-3) return false;
+    const nx = dx / distance;
+    const nz = dz / distance;
+    player.x -= nx * (CAR_RADIUS * 2 - distance);
+    player.z -= nz * (CAR_RADIUS * 2 - distance);
+    player.vx -= nx * 3;
+    player.vz -= nz * 3;
+    return true;
+  }
 
   const camera = new THREE.PerspectiveCamera(68, 1, 0.1, 500);
   const lookTarget = new THREE.Vector3();
@@ -136,6 +174,29 @@ export function createChoconesRide({ kit, park, scene, look, random }) {
       });
       for (let i = 0; i < rivals.length; i += 1) for (let j = i + 1; j < rivals.length; j += 1) collide(rivals[i], rivals[j]);
 
+      const follow = Math.min(1, delta * MATE_FOLLOW_RATE);
+      mateCars.forEach((car) => {
+        car.x += (car.target.x - car.x) * follow;
+        car.z += (car.target.z - car.z) * follow;
+        let turn = car.target.heading - car.heading;
+        while (turn > Math.PI) turn -= Math.PI * 2;
+        while (turn < -Math.PI) turn += Math.PI * 2;
+        car.heading += turn * follow;
+        car.cooldown -= delta;
+        car.mesh.position.set(car.x, 0, car.z);
+        car.mesh.rotation.y = car.heading;
+        car.driver.update(delta);
+        rivals.forEach((rival) => collide(car, rival));
+        if (bounceOffMate(car) && car.cooldown <= 0 && player.speed >= BUMP_MIN_SPEED) {
+          car.cooldown = BUMP_COOLDOWN;
+          car.driver.say(pickLine(HIT_LINES, random), 1.2);
+          bumps += 1;
+          message = '💥 ¡PUM a tu amiga! +1';
+          messageTimer = 0.9;
+          sounds.bump();
+        }
+      });
+
       const forwardX = Math.sin(player.heading);
       const forwardZ = Math.cos(player.heading);
       camera.position.set(
@@ -145,6 +206,13 @@ export function createChoconesRide({ kit, park, scene, look, random }) {
       );
       lookTarget.set(bumper.center.x + player.x + forwardX * 3, 0.8, bumper.center.z + player.z + forwardZ * 3);
       camera.lookAt(lookTarget);
+    },
+
+    mateState: () => ({ x: player.x, z: player.z, heading: player.heading }),
+
+    onMateState(id, state) {
+      const car = mateCars.get(id);
+      if (car) car.target = state;
     },
 
     status: () => `💥 Choques: ${bumps} · ⏱️ ${Math.max(0, Math.ceil(DURATION - time))} s`,

@@ -10,7 +10,7 @@ import { DINOS, isDinoUnlocked } from '../games/dino/dinos.js';
 import { GEO_LEVELS, GEO_WORLDS } from '../games/geo/levels.js';
 import { ACHIEVEMENTS, countStars as countGeoStars } from '../games/geo/achievements.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
-import { GOLDEN_BEANS, RIDES } from '../games/park/worlds.js';
+import { ALL_RIDES, GOLDEN_BEANS, GOLDEN_EGGS, PANACA_RIDES, PARK_WORLDS, RIDES, isWorldOpen } from '../games/park/worlds.js';
 
 export const STICKER_GROUPS = [
   { id: 'dino', title: '🦖 Dino Corre', color: '#4dd4ac' },
@@ -64,10 +64,10 @@ export const STICKERS = [
     tetris.unlockedWorld >= TETRIS_WORLDS.length - 1,
   ),
 
-  ...RIDES.map((ride) =>
+  ...ALL_RIDES.map((ride) =>
     sticker('park', `park-${ride.id}`, ride.emoji, ride.name, `Monta en ${ride.name}`, ({ park }) => (park.ridesDone[ride.id] ?? 0) >= 1),
   ),
-  sticker('park', 'park-all-rides', '🎠', 'Todo el parque', 'Monta en todas las atracciones', ({ park }) =>
+  sticker('park', 'park-all-rides', '🎠', 'Todo el Parque del Café', 'Monta en todas las atracciones del Parque del Café', ({ park }) =>
     RIDES.every((ride) => (park.ridesDone[ride.id] ?? 0) >= 1),
   ),
   sticker('park', 'park-fastpass', '🎟️', 'Pase rápido', 'Usa un pase rápido', ({ park }) => park.fastPasses >= 1),
@@ -75,6 +75,13 @@ export const STICKERS = [
   sticker('park', 'park-beans-5', '☕', 'Cafetera', 'Encuentra 5 granos dorados', ({ park }) => park.goldenBeans.length >= 5),
   sticker('park', 'park-beans-all', '🌟', 'Todos los granos', 'Encuentra todos los granos dorados', ({ park }) =>
     park.goldenBeans.length >= GOLDEN_BEANS.length,
+  ),
+  sticker('park', 'park-panaca', '🐄', 'Granjera', 'Abre la Granja Panaca', ({ park }) => isWorldOpen(PARK_WORLDS[1], park)),
+  sticker('park', 'park-panaca-all', '🚜', 'Toda la granja', 'Monta en todas las atracciones de la Granja Panaca', ({ park }) =>
+    PANACA_RIDES.every((ride) => (park.ridesDone[ride.id] ?? 0) >= 1),
+  ),
+  sticker('park', 'park-eggs-all', '🥚', 'Todos los huevos', 'Encuentra todos los huevos dorados', ({ park }) =>
+    park.goldenEggs.length >= GOLDEN_EGGS.length,
   ),
   sticker('park', 'park-missions', '📋', 'Misionera', 'Cumple 10 misiones del parque', ({ park }) => park.missionsDone >= 10),
   sticker('park', 'park-friends', '👭', 'Parque con amigas', 'Entra al parque con amigas', ({ park }) => park.friendVisits >= 1),

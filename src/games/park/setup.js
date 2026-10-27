@@ -3,7 +3,7 @@ import { getGameData, updateGameData } from '../../core/player.js';
 import { sounds } from '../../core/audio.js';
 import { trackEvent } from '../../core/analytics.js';
 import { OUTFIT_SLOTS, SKIN_TONES, currentOutfit, isOwned } from './outfits.js';
-import { GOLDEN_BEANS, PARK_WORLDS, RIDES, UPCOMING_WORLDS } from './worlds.js';
+import { PARK_WORLDS, UPCOMING_WORLDS, isWorldOpen } from './worlds.js';
 import { ALL_MISSIONS_BONUS, MISSION_COINS, describeMissions, todaysMissions } from './missions.js';
 
 /** Pantalla previa al parque: vestirse, comprar ropa, ver misiones, atracciones y granos dorados. */
@@ -106,7 +106,7 @@ export function mountParkSetup(root) {
   });
 
   const wardrobe = el('section', { className: 'card setup__section park-wardrobe' }, [
-    el('div', { className: 'shop__header' }, [el('h2', { className: 'setup__subtitle', text: '1. Vístete 👗' }), walletPill]),
+    el('div', { className: 'shop__header' }, [el('h2', { className: 'setup__subtitle', text: '2. Vístete 👗' }), walletPill]),
     el('div', { className: 'park-wardrobe__layout' }, [
       el('div', { className: 'park-wardrobe__preview' }, [preview, el('div', { className: 'park-skins' }, skinButtons)]),
       el(
@@ -125,7 +125,7 @@ export function mountParkSetup(root) {
 
   const missions = describeMissions(todaysMissions(data));
   const missionSection = el('section', { className: 'card setup__section' }, [
-    el('h2', { className: 'setup__subtitle', text: '2. Misiones de hoy 📋' }),
+    el('h2', { className: 'setup__subtitle', text: '3. Misiones de hoy 📋' }),
     el(
       'ul',
       { className: 'park-mission-list' },
@@ -140,52 +140,86 @@ export function mountParkSetup(root) {
     el('p', { className: 'setup__note', text: `Cada misión da ${MISSION_COINS} 🪙 y, si cumples las 3, ${ALL_MISSIONS_BONUS} 🪙 más. ¡Mañana habrá otras!` }),
   ]);
 
-  // ---------- Atracciones y granos dorados ----------
+  // ---------- Parques: elegir uno y ver sus atracciones y tesoros ----------
 
-  const rideCards = RIDES.map((ride) => {
-    const count = data.ridesDone[ride.id] ?? 0;
-    return el('div', { className: `park-ride-card ${count ? 'is-done' : ''}` }, [
-      el('span', { className: 'park-ride-card__emoji', text: ride.emoji, attrs: { 'aria-hidden': 'true' } }),
-      el('strong', { text: ride.name }),
-      el('small', { text: ride.description }),
-      el('span', { className: 'park-ride-card__count', text: count ? `🎟️ ${count} ${count === 1 ? 'viaje' : 'viajes'}` : '¡Aún no!' }),
-    ]);
+  let selectedWorld = Math.min(data.lastWorld ?? 0, PARK_WORLDS.length - 1);
+  if (!isWorldOpen(PARK_WORLDS[selectedWorld], data)) selectedWorld = 0;
+
+  const worldButtons = PARK_WORLDS.map((world, index) => {
+    const isOpen = isWorldOpen(world, data);
+    return el(
+      'button',
+      {
+        className: `world-option park-world ${isOpen ? '' : 'is-locked'}`,
+        attrs: { type: 'button', disabled: !isOpen, 'data-index': index },
+        on: { click: () => selectWorld(index) },
+      },
+      [
+        el('span', { className: 'world-option__emoji', text: isOpen ? world.emoji : '🔒', attrs: { 'aria-hidden': 'true' } }),
+        el('strong', { text: world.name }),
+        el('small', { text: isOpen ? world.description : world.unlock.hint }),
+      ],
+    );
   });
+  const upcomingCards = UPCOMING_WORLDS.map((world) =>
+    el('div', { className: 'world-option is-locked park-world' }, [
+      el('span', { className: 'world-option__emoji', text: world.emoji, attrs: { 'aria-hidden': 'true' } }),
+      el('strong', { text: world.name }),
+      el('small', { text: '🔒 Próximamente' }),
+    ]),
+  );
 
-  const beanSlots = GOLDEN_BEANS.map((bean) => {
-    const found = data.goldenBeans.includes(bean.id);
-    return el('li', {
-      className: `park-bean ${found ? 'is-found' : ''}`,
-      text: found ? '🌟' : '❔',
-      attrs: { title: found ? '¡Encontrado!' : `Pista: ${bean.hint}` },
+  const details = el('section', { className: 'card setup__section' });
+  const treasurePill = el('span', { className: 'star-pill' });
+
+  function renderDetails() {
+    const world = PARK_WORLDS[selectedWorld];
+    const { treasure } = world;
+    const found = data[treasure.key] ?? [];
+    const rideCards = world.rides.map((ride) => {
+      const count = data.ridesDone[ride.id] ?? 0;
+      return el('div', { className: `park-ride-card ${count ? 'is-done' : ''}` }, [
+        el('span', { className: 'park-ride-card__emoji', text: ride.emoji, attrs: { 'aria-hidden': 'true' } }),
+        el('strong', { text: ride.name }),
+        el('small', { text: ride.description }),
+        el('span', { className: 'park-ride-card__count', text: count ? `🎟️ ${count} ${count === 1 ? 'viaje' : 'viajes'}` : '¡Aún no!' }),
+      ]);
     });
-  });
-  const nextBean = GOLDEN_BEANS.find((bean) => !data.goldenBeans.includes(bean.id));
+    const slots = treasure.items.map((item) =>
+      el('li', {
+        className: `park-bean ${found.includes(item.id) ? 'is-found' : ''}`,
+        text: found.includes(item.id) ? treasure.icon : '❔',
+        attrs: { title: found.includes(item.id) ? '¡Encontrado!' : `Pista: ${item.hint}` },
+      }),
+    );
+    const next = treasure.items.find((item) => !found.includes(item.id));
+    details.replaceChildren(
+      el('h2', { className: 'setup__subtitle', text: `4. Atracciones de ${world.name} ${world.emoji}` }),
+      el('div', { className: 'park-ride-grid' }, rideCards),
+      el('h3', { className: 'world-group__title', text: `${treasure.icon} ${treasure.name}: ${found.length}/${treasure.items.length}` }),
+      el('ul', { className: 'park-beans' }, slots),
+      el('p', { className: 'setup__note', text: next ? `Pista: ${next.hint.toLowerCase()}…` : `¡Encontraste todos los ${treasure.name.toLowerCase()}! 🏆` }),
+    );
+    treasurePill.textContent = `${treasure.icon} ${found.length}/${treasure.items.length}`;
+    treasurePill.title = treasure.name;
+    worldButtons.forEach((button, index) => {
+      button.classList.toggle('is-selected', index === selectedWorld);
+      button.setAttribute('aria-pressed', String(index === selectedWorld));
+    });
+  }
 
-  const collection = el('section', { className: 'card setup__section' }, [
-    el('h2', { className: 'setup__subtitle', text: '3. Atracciones del Parque del Café 🎡' }),
-    el('div', { className: 'park-ride-grid' }, rideCards),
-    el('h3', { className: 'world-group__title', text: `🌟 Granos de café dorados: ${data.goldenBeans.length}/${GOLDEN_BEANS.length}` }),
-    el('ul', { className: 'park-beans' }, beanSlots),
-    el('p', { className: 'setup__note', text: nextBean ? `Pista: ${nextBean.hint.toLowerCase()}…` : '¡Encontraste todos los granos dorados! 🏆' }),
+  function selectWorld(index) {
+    sounds.click();
+    selectedWorld = index;
+    updateGameData('park', { lastWorld: index });
+    data = getGameData('park');
+    renderDetails();
+  }
+
+  const worldSection = el('section', { className: 'card setup__section' }, [
+    el('h2', { className: 'setup__subtitle', text: '1. Elige el parque 🗺️' }),
+    el('div', { className: 'world-grid' }, [...worldButtons, ...upcomingCards]),
   ]);
-
-  const worldCards = [
-    ...PARK_WORLDS.map((world) =>
-      el('div', { className: 'world-option is-selected park-world' }, [
-        el('span', { className: 'world-option__emoji', text: world.emoji, attrs: { 'aria-hidden': 'true' } }),
-        el('strong', { text: world.name }),
-        el('small', { text: world.description }),
-      ]),
-    ),
-    ...UPCOMING_WORLDS.map((world) =>
-      el('div', { className: 'world-option is-locked park-world' }, [
-        el('span', { className: 'world-option__emoji', text: world.emoji, attrs: { 'aria-hidden': 'true' } }),
-        el('strong', { text: world.name }),
-        el('small', { text: '🔒 Próximamente' }),
-      ]),
-    ),
-  ];
 
   const page = el('div', { className: 'setup' }, [
     el('header', { className: 'setup__header' }, [
@@ -196,15 +230,12 @@ export function mountParkSetup(root) {
         on: { click: () => navigate('/') },
       }),
       el('h1', { className: 'setup__title', text: '🎡 Parque Mágico' }),
-      el('span', { className: 'star-pill', text: `🌟 ${data.goldenBeans.length}/${GOLDEN_BEANS.length}`, attrs: { title: 'Granos dorados' } }),
+      treasurePill,
     ]),
+    worldSection,
     wardrobe,
     missionSection,
-    collection,
-    el('section', { className: 'card setup__section' }, [
-      el('h2', { className: 'setup__subtitle', text: '4. Mundos 🗺️' }),
-      el('div', { className: 'world-grid' }, worldCards),
-    ]),
+    details,
     el('div', { className: 'dino-playbar' }, [
       el('button', {
         className: 'btn btn--primary btn--xl',
@@ -213,7 +244,7 @@ export function mountParkSetup(root) {
         on: {
           click: () => {
             sounds.coin();
-            navigate('/parque/jugar?mundo=0');
+            navigate(`/parque/jugar?mundo=${selectedWorld}`);
           },
         },
       }),
@@ -224,13 +255,14 @@ export function mountParkSetup(root) {
         on: {
           click: () => {
             sounds.click();
-            navigate('/parque/amigos');
+            navigate(`/parque/amigos?mundo=${selectedWorld}`);
           },
         },
       }),
     ]),
   ]);
 
+  renderDetails();
   refresh();
   root.append(el('main', { className: 'page' }, [page]));
 }

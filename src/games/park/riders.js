@@ -54,3 +54,20 @@ export function createRider(kit, random, { scale = 0.6, seatY = 0.6, look = rand
     },
   };
 }
+
+/** Una amiga sentada en la atracción, con su ropa y su nombre. */
+export function createMateRider(kit, random, mate, options = {}) {
+  return createRider(kit, random, { ...options, look: mate.look, name: `${mate.emoji} ${mate.name}` });
+}
+
+/**
+ * Lo que hace una amiga sentada cuando dice algo dentro de la atracción: burbuja y, si grita,
+ * brazos arriba un momento.
+ */
+export function mateReacts(rider, text, { cheer = false } = {}) {
+  rider.say(text, 1.3);
+  if (cheer) {
+    rider.setCheer(true);
+    setTimeout(() => rider.setCheer(false), 1200);
+  }
+}

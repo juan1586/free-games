@@ -58,7 +58,44 @@ export const RIDES = [
   },
 ];
 
-export const getRide = (id) => RIDES.find((ride) => ride.id === id);
+/** Atracciones de la Granja Panaca (misma distribución: filas que llegan a la plaza). */
+export const PANACA_RIDES = [
+  {
+    id: 'cerditos',
+    name: 'Carrera de Cerditos',
+    emoji: '🐷',
+    description: '¡Anima a tu cerdito pulsando rápido para que gane!',
+    entrance: { x: 24, z: -18 },
+    queueDir: { x: -0.8, z: 0.6 },
+    fastPassPrice: 8,
+    secondsPerPerson: 2.4,
+  },
+  {
+    id: 'ordeno',
+    name: 'Ordeñar a Lola',
+    emoji: '🐄',
+    description: 'Ordeña a la vaca Lola siguiendo el ritmo.',
+    entrance: { x: -24, z: -18 },
+    queueDir: { x: 0.8, z: 0.6 },
+    fastPassPrice: 8,
+    secondsPerPerson: 2.4,
+  },
+  {
+    id: 'tractor',
+    name: 'Paseo en Tractor',
+    emoji: '🚜',
+    description: 'Recoge huevos con el tractor y esquiva el barro.',
+    entrance: { x: 0, z: -30 },
+    queueDir: { x: 0, z: 1 },
+    fastPassPrice: 10,
+    secondsPerPerson: 2.2,
+  },
+];
+
+/** Todas las atracciones de todos los parques (los ids no se repiten). */
+export const ALL_RIDES = [...RIDES, ...PANACA_RIDES];
+
+export const getRide = (id) => ALL_RIDES.find((ride) => ride.id === id);
 
 /** Granos de café dorados escondidos (coleccionables que no vuelven a salir). */
 export const GOLDEN_BEANS = [
@@ -74,19 +111,50 @@ export const GOLDEN_BEANS = [
   { id: 'bean-10', x: 30, y: 0.9, z: -50, hint: 'Al fondo, cerca del Krater' },
 ];
 
+/** Huevos dorados escondidos en la Granja Panaca. */
+export const GOLDEN_EGGS = [
+  { id: 'egg-1', x: 16, y: 3.5, z: 40, hint: 'En el techo del gallinero' },
+  { id: 'egg-2', x: 0, y: 0.9, z: -5, hint: 'Detrás del molino' },
+  { id: 'egg-3', x: 44, y: 0.9, z: 16, hint: 'Con las vacas (¡salta la cerca!)' },
+  { id: 'egg-4', x: -44, y: 0.9, z: 8, hint: 'Con las ovejas (¡salta la cerca!)' },
+  { id: 'egg-5', x: 42, y: 0.9, z: 38.2, hint: 'Entre el maizal' },
+  { id: 'egg-6', x: -40, y: 0.9, z: -42, hint: 'Detrás del establo de Lola' },
+  { id: 'egg-7', x: 6, y: 0.9, z: -54, hint: 'Detrás del galpón del tractor' },
+  { id: 'egg-8', x: -27, y: 0.9, z: 46, hint: 'Junto al estanque de los patos' },
+];
+
+/**
+ * Parques. `treasure`: lo que se colecciona en cada uno (`key` es el campo de `park` donde se guarda).
+ * `unlock`: qué hay que hacer para abrirlo (sin `unlock`, abierto desde el principio).
+ */
 export const PARK_WORLDS = [
   {
     id: 'cafe',
     name: 'Parque del Café',
     emoji: '☕',
     description: 'En el Quindío, entre cafetales y montañas.',
-    rides: RIDES.map((ride) => ride.id),
+    rides: RIDES,
+    treasure: { key: 'goldenBeans', name: 'Granos de café dorados', short: 'Granos', icon: '🌟', item: 'grano dorado', items: GOLDEN_BEANS },
+  },
+  {
+    id: 'panaca',
+    name: 'Granja Panaca',
+    emoji: '🐄',
+    description: 'La granja del Quindío: animales, tractores y carreras de cerditos.',
+    rides: PANACA_RIDES,
+    treasure: { key: 'goldenEggs', name: 'Huevos dorados', short: 'Huevos', icon: '🥚', item: 'huevo dorado', items: GOLDEN_EGGS },
+    unlock: {
+      hint: 'Monta en todas las atracciones del Parque del Café',
+      check: (data) => RIDES.every((ride) => (data.ridesDone[ride.id] ?? 0) >= 1),
+    },
   },
 ];
 
+export const isWorldOpen = (world, data) => !world.unlock || world.unlock.check(data);
+export const getWorldOfRide = (rideId) => PARK_WORLDS.find((world) => world.rides.some((ride) => ride.id === rideId));
+
 /** Mundos que vendrán (se muestran como «próximamente» en la pantalla previa). */
 export const UPCOMING_WORLDS = [
-  { id: 'panaca', name: 'Granja Panaca', emoji: '🐄' },
   { id: 'playa', name: 'Playa de Cartagena', emoji: '🏖️' },
   { id: 'selva', name: 'Selva Amazónica', emoji: '🐒' },
   { id: 'dulces', name: 'Castillo de Dulces', emoji: '🍭' },

@@ -8,7 +8,7 @@ import { DINO_WORLDS } from '../games/dino/worlds.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
 import { GEO_WORLDS, MAIN_LEVELS } from '../games/geo/levels.js';
 import { ACHIEVEMENTS, MAX_STARS, countCompleted, countStars as countGeoStars } from '../games/geo/achievements.js';
-import { GOLDEN_BEANS } from '../games/park/worlds.js';
+import { PARK_WORLDS, isWorldOpen } from '../games/park/worlds.js';
 
 function countStars(starsByWorld) {
   return Object.values(starsByWorld).reduce((total, stars) => total + stars, 0);
@@ -240,13 +240,13 @@ export function mountMenu(root) {
     renderGameCard({
       path: '/parque',
       title: 'Parque Mágico',
-      tagline: 'Pasea en 3D por el Parque del Café, haz fila y monta en el Krater.',
+      tagline: 'Pasea en 3D por el Parque del Café y la Granja Panaca, haz fila y monta con tus amigas.',
       theme: 'park',
       art: renderParkArt(),
       records: [
         { icon: '🪙', label: 'Monedas', value: park.coins },
         { icon: '🎢', label: 'Viajes', value: park.totalRides },
-        { icon: '🌟', label: 'Granos', value: `${park.goldenBeans.length}/${GOLDEN_BEANS.length}` },
+        { icon: '🗺️', label: 'Parques', value: `${PARK_WORLDS.filter((world) => isWorldOpen(world, park)).length}/${PARK_WORLDS.length}` },
       ],
     }),
   ]);

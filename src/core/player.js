@@ -43,6 +43,8 @@ const createDefaultGames = () => ({
     fastPasses: 0,
     snitches: 0,
     goldenBeans: [],
+    goldenEggs: [],
+    lastWorld: 0,
     missions: { day: '', list: [] },
     missionsDone: 0,
     friendVisits: 0,

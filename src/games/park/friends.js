@@ -6,7 +6,7 @@
 import { getSession, leaveRoom, onDisconnect, onLeave, onMessage, send } from '../../core/race.js';
 import { createAvatar } from './avatar.js';
 import { outfitFromIds } from './outfits.js';
-import { SAYINGS, parseParkPos, parseSaying } from './race.js';
+import { SAYINGS, parseBoard, parseParkPos, parseRideState, parseSaying } from './race.js';
 
 const SEND_EVERY = 0.1;
 const FOLLOW_RATE = 10;
@@ -14,7 +14,8 @@ const DANCE_SECONDS = 2;
 const FLASH_SECONDS = 2;
 
 /**
- * onEvent({ type: 'say', friend, kind, rideId } | { type: 'left', friend } | { type: 'closed' }).
+ * onEvent({ type: 'say', friend, kind, rideId } | { type: 'board', friend, rideId, seed, ids }
+ *   | { type: 'rideState', friend, rideId, x, z, heading } | { type: 'left', friend } | { type: 'closed' }).
  * Devuelve null si no hay sala.
  */
 export function createFriends({ kit, scene, onEvent }) {
@@ -26,7 +27,8 @@ export function createFriends({ kit, scene, onEvent }) {
   session.meta.players
     .filter((player) => player.id !== session.myId)
     .forEach((player) => {
-      const avatar = createAvatar(kit, outfitFromIds(player.look?.outfit));
+      const look = outfitFromIds(player.look?.outfit);
+      const avatar = createAvatar(kit, look);
       const label = kit.label(`${player.avatar} ${player.name}`, { background: '#7b5cff', color: '#ffffff', height: 0.45 });
       label.sprite.position.y = 2.95;
       const bubble = kit.label(' ', { bubble: true, height: 0.6, background: '#fff6c9' });
@@ -40,6 +42,7 @@ export function createFriends({ kit, scene, onEvent }) {
         id: player.id,
         name: player.name,
         emoji: player.avatar,
+        look,
         avatar,
         bubble,
         bubbleTimer: 0,
@@ -67,6 +70,16 @@ export function createFriends({ kit, scene, onEvent }) {
       if (!pos) return;
       if (!friend.target) Object.assign(friend, { x: pos.x, y: pos.y, z: pos.z, heading: pos.heading });
       friend.target = pos;
+      return;
+    }
+    if (message.type === 'board') {
+      const board = parseBoard(message);
+      if (board) onEvent({ type: 'board', friend, ...board });
+      return;
+    }
+    if (message.type === 'rstate') {
+      const state = parseRideState(message);
+      if (state) onEvent({ type: 'rideState', friend, ...state });
       return;
     }
     if (message.type !== 'say') return;
@@ -129,6 +142,18 @@ export function createFriends({ kit, scene, onEvent }) {
         }
         friend.flashTimer -= delta;
       });
+    },
+
+    myId: session.myId,
+
+    /** Subo a la atracción y me llevo a las amigas `ids` que estaban en mi fila (con la misma semilla). */
+    board(rideId, seed, ids) {
+      send({ type: 'board', ride: rideId, seed, ids });
+    },
+
+    /** Mi posición dentro de la atracción (para las que van conmigo). */
+    rideState(rideId, { x, z, heading }) {
+      send({ type: 'rstate', ride: rideId, x, z, h: heading });
     },
 
     /** Avisa a las demás (kind: una clave de SAYINGS). */

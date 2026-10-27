@@ -91,11 +91,11 @@ const ROUTES = {
     return mountGeoGame(app, { levelIndex: parseLevel(query), practice: query.get('practica') === '1', race });
   },
   '/parque': () => mountParkSetup(app),
-  '/parque/amigos': () => mountParkFriendsLobby(app),
+  '/parque/amigos': (query) => mountParkFriendsLobby(app, { worldIndex: parseWorld(query) }),
   '/parque/jugar': (query) => {
     const friends = query.get('amigos') === '1';
     if (friends && !hasRaceReady()) {
-      navigate('/parque/amigos');
+      navigate(`/parque/amigos?mundo=${parseWorld(query)}`);
       return null;
     }
     return mountLazy(

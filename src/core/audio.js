@@ -64,6 +64,8 @@ export const sounds = {
   bump: () => playTone({ frequency: 150, endFrequency: 55, duration: 0.18, type: 'square', volume: 0.12 }),
   cash: () => playMelody([[1319, 0, 0.06], [1760, 0.06, 0.06], [2093, 0.12, 0.2]], 'square'),
   alert: () => playMelody([[880, 0, 0.1], [660, 0.13, 0.1], [880, 0.26, 0.12]], 'square'),
+  moo: () => playTone({ frequency: 190, endFrequency: 130, duration: 0.6, type: 'sawtooth', volume: 0.07 }),
+  oink: () => playMelody([[520, 0, 0.06], [420, 0.08, 0.08]], 'square'),
 };
 
 const NOTE_OFFSETS = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };

@@ -1,28 +1,14 @@
 /**
- * Construye el Parque del Café en 3D: plaza con la taza gigante, caminos, casitas de colores, cafetal,
+ * Construye el Parque del Café en 3D: plaza con la taza gigante, casitas de colores, cafetal,
  * palmas de cera, guaduas y las 5 atracciones (que también usan los minijuegos de rides/).
  * Devuelve los choques, las animaciones del decorado y las piezas de cada atracción.
  */
 import * as THREE from 'three';
 import { at } from './kit.js';
 import { SCREAMS, createRider, pickLine } from './riders.js';
-import { addBox, addCircle, createColliders } from './collision.js';
-import { MAX_QUEUE, QUEUE_SPACING } from './queue.js';
-import { RIDES } from './worlds.js';
-import {
-  addSkyAndLights,
-  COASTER_CAR_GAP,
-  buildBumperCar,
-  buildClouds,
-  buildCoasterTrain,
-  buildCoffeeBushes,
-  buildJeep,
-  buildMountains,
-} from './props.js';
-
-/** Radio del parque por el que se puede caminar. */
-export const PARK_RADIUS = 66;
-export const SPAWN = { x: 0, z: 52 };
+import { addBox, addCircle } from './collision.js';
+import { COASTER_CAR_GAP, buildBumperCar, buildCoasterTrain, buildCoffeeBushes, buildJeep } from './props.js';
+import { PARK_RADIUS, buildParkBase } from './parkBase.js';
 
 const KRATER_CENTER = { x: 42, z: -32 };
 const CUMBRE = { x: -40, z: -30, height: 32 };
@@ -95,28 +81,9 @@ function cumbreIdleHeight(time) {
   return 1.5;
 }
 
-export function buildPark(kit, scene, random) {
-  const colliders = createColliders();
-  const animations = [];
-
-  addSkyAndLights(scene);
-  scene.add(at(kit.disc(260, 0x86cf6a), 0, 0, 0));
-  scene.add(buildMountains(kit, random));
-  const clouds = buildClouds(kit, random);
-  scene.add(clouds);
-  animations.push((delta) => {
-    clouds.children.forEach((cloud) => {
-      cloud.position.x += delta * 1.2;
-      if (cloud.position.x > 130) cloud.position.x = -130;
-    });
-  });
-
-  // Seto alrededor del parque.
-  const hedgeGeometry = kit.geometry('hedge', () => new THREE.CylinderGeometry(PARK_RADIUS + 3, PARK_RADIUS + 3, 1.6, 72, 1, true));
-  scene.add(at(new THREE.Mesh(hedgeGeometry, kit.mat(0x3f9a4f, { side: THREE.DoubleSide })), 0, 0.8, 0));
-
-  buildPaths(kit, scene);
-  buildGate(kit, scene, colliders);
+/** Parque del Café: lo común (cielo, caminos, portada, filas) y lo propio de este parque. */
+export function buildCafePark(kit, scene, random, world) {
+  const { colliders, animations } = buildParkBase(kit, scene, random, world);
   buildFountain(kit, scene, colliders, animations);
   buildKiosk(kit, scene, colliders);
   buildBenchesAndLamps(kit, scene, colliders);
@@ -124,7 +91,6 @@ export function buildPark(kit, scene, random) {
   buildCafetal(kit, scene, colliders, random);
   buildPalms(kit, scene, colliders, random);
   buildGuaduas(kit, scene, colliders, random);
-  RIDES.forEach((ride) => buildQueueArea(kit, scene, ride));
 
   const krater = buildKrater(kit, scene, colliders, animations, random);
   const cumbre = buildCumbre(kit, scene, colliders, animations, random);
@@ -145,40 +111,6 @@ export function buildPark(kit, scene, random) {
       animations.forEach((animate) => animate(delta, time));
     },
   };
-}
-
-// ---------- Suelo y caminos ----------
-
-function pathStrip(kit, from, to, width, color = 0xf1d9a8) {
-  const dx = to.x - from.x;
-  const dz = to.z - from.z;
-  const length = Math.hypot(dx, dz);
-  const group = at(new THREE.Group(), (from.x + to.x) / 2, 0.02, (from.z + to.z) / 2);
-  group.rotation.y = Math.atan2(dx, dz);
-  group.add(kit.plane(width, length, color));
-  return group;
-}
-
-function buildPaths(kit, scene) {
-  scene.add(at(kit.disc(13.5, 0xf1d9a8), 0, 0.025, 0));
-  scene.add(at(kit.disc(10, 0xf6e4bd), 0, 0.03, 0));
-  scene.add(pathStrip(kit, { x: 0, z: 10 }, { x: 0, z: 64 }, 6));
-  RIDES.forEach((ride) => {
-    const end = { x: ride.entrance.x - ride.queueDir.x * 3, z: ride.entrance.z - ride.queueDir.z * 3 };
-    scene.add(pathStrip(kit, { x: 0, z: 0 }, end, 5));
-  });
-}
-
-function buildGate(kit, scene, colliders) {
-  const z = 60;
-  [-5.5, 5.5].forEach((x) => {
-    scene.add(at(kit.box(2, 7, 2, 0xff9f43), x, 3.5, z));
-    scene.add(at(kit.cone(1.5, 1.6, 0xff5fa2, 4), x, 7.8, z));
-    addBox(colliders, { x, z, width: 2, depth: 2, top: 99 });
-  });
-  scene.add(at(kit.box(13, 1.4, 1.2, 0x7b5cff), 0, 6.6, z));
-  const sign = kit.label('☕ Parque del Café', { background: '#ffd93d', height: 1.8 });
-  scene.add(at(sign.sprite, 0, 8.6, z));
 }
 
 function buildFountain(kit, scene, colliders, animations) {
@@ -321,31 +253,6 @@ function buildGuaduas(kit, scene, colliders, random) {
   });
 }
 
-// ---------- Filas ----------
-
-/** Barandas de la fila y arco con el nombre de la atracción. */
-function buildQueueArea(kit, scene, ride) {
-  const { entrance, queueDir } = ride;
-  const yaw = Math.atan2(queueDir.x, queueDir.z);
-  const length = (MAX_QUEUE - 0.5) * QUEUE_SPACING;
-  const area = at(new THREE.Group(), entrance.x, 0, entrance.z);
-  area.rotation.y = yaw;
-  [-0.95, 0.95].forEach((side) => {
-    for (let post = 0; post <= MAX_QUEUE; post += 2) {
-      area.add(at(kit.cyl(0.07, 0.07, 1, 0xd4af37, 6), side, 0.5, post * QUEUE_SPACING));
-    }
-    area.add(at(kit.box(0.05, 0.06, length, 0xff5f5f), side, 0.9, length / 2));
-  });
-  area.add(at(kit.plane(1.9, length + 1, 0xe9d3a0), 0, 0.035, length / 2 - 0.5));
-  // Arco de entrada.
-  [-1.4, 1.4].forEach((side) => area.add(at(kit.box(0.3, 3.4, 0.3, 0x7b5cff), side, 1.7, -1)));
-  area.add(at(kit.box(3.2, 0.4, 0.4, 0xff5fa2), 0, 3.5, -1));
-  scene.add(area);
-
-  const sign = kit.label(`${ride.emoji} ${ride.name}`, { background: '#ffffff', height: 1 });
-  scene.add(at(sign.sprite, entrance.x - queueDir.x, 4.4, entrance.z - queueDir.z));
-}
-
 // ---------- Atracciones ----------
 
 function buildKrater(kit, scene, colliders, animations, random) {
@@ -396,6 +303,7 @@ function buildCumbre(kit, scene, colliders, animations, random) {
   seat.add(kit.torus(2.1, 0.32, 0xffd93d));
   seat.children[0].rotation.x = Math.PI / 2;
   const riders = [];
+  const bench = [];
   for (let index = 0; index < CUMBRE_CHAIRS; index += 1) {
     const angle = (index / CUMBRE_CHAIRS) * Math.PI * 2;
     const chair = at(new THREE.Group(), Math.sin(angle) * 2.1, 0, Math.cos(angle) * 2.1);
@@ -410,6 +318,7 @@ function buildCumbre(kit, scene, colliders, animations, random) {
       rider.root.position.set(side, rider.root.position.y, 0.32);
       chair.add(rider.root);
       riders.push(rider);
+      if (isPlayerBench) bench.push({ chair, side, rider });
     });
     seat.add(chair);
   }
@@ -423,6 +332,8 @@ function buildCumbre(kit, scene, colliders, animations, random) {
     height,
     seat,
     idle: true,
+    /** Puestos a los lados de la jugadora: { chair, side, rider }. Ahí se sientan las amigas. */
+    bench,
     /** Dirección hacia fuera de la silla de la jugadora. */
     playerDir: { x: Math.sin(playerAngle), z: Math.cos(playerAngle) },
     /** Todos gritan (al caer) o se callan. */

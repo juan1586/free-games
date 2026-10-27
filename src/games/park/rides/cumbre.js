@@ -4,6 +4,8 @@
  */
 import * as THREE from 'three';
 import { sounds } from '../../../core/audio.js';
+import { createMateRider, mateReacts } from '../riders.js';
+import { SAYINGS } from '../race.js';
 
 const ROUNDS = 3;
 const BOTTOM = 1.5;
@@ -15,9 +17,19 @@ const LAND_SECONDS = 1.6;
 const STAR_TIMES = [0.4, 0.7, 1.2];
 const TOP_LINES = ['¡Qué alto! 😨', '¿Ya va a caer? 😬', '¡No mires abajo! 🙈', '¡Se ve todo el parque! 😮'];
 
-export function createCumbreRide({ park, random }) {
+export function createCumbreRide({ kit, park, random, announce, mates }) {
   const { cumbre } = park;
   cumbre.idle = false;
+  // Las amigas ocupan los puestos de al lado (los visitantes que iban ahí se bajan).
+  const mateRiders = new Map();
+  mates.slice(0, cumbre.bench.length).forEach((mate, index) => {
+    const place = cumbre.bench[index];
+    const rider = createMateRider(kit, random, mate, { scale: 0.55, seatY: -0.1, bubbleHeight: 0.4 });
+    rider.root.position.set(place.side, rider.root.position.y, 0.32);
+    place.rider.root.visible = false;
+    place.chair.add(rider.root);
+    mateRiders.set(mate.id, { rider, place });
+  });
   const camera = new THREE.PerspectiveCamera(80, 1, 0.1, 500);
   // La silla libre de la torre mira hacia la plaza.
   const out = cumbre.playerDir;
@@ -72,6 +84,7 @@ export function createCumbreRide({ park, random }) {
         if (pressed && !reacted) {
           reacted = true;
           endRound(0, '🙈 ¡Uy, muy pronto!');
+          announce('early');
         }
         if (timer >= waitFor) {
           phase = 'drop';
@@ -84,7 +97,10 @@ export function createCumbreRide({ park, random }) {
           reacted = true;
           const earned = STAR_TIMES.filter((limit) => timer <= limit).length;
           endRound(earned, earned ? `${'⭐'.repeat(earned)} ¡Valiente!` : '😅 ¡Casi!');
-          if (earned) sounds.coin();
+          if (earned) {
+            sounds.coin();
+            announce('brave');
+          }
         }
         if (timer >= DROP_SECONDS) {
           if (!reacted) endRound(0, '😵 ¡Se te pasó!');
@@ -102,6 +118,7 @@ export function createCumbreRide({ park, random }) {
         timer = 0;
       }
 
+      mateRiders.forEach(({ rider }) => rider.update(delta));
       const height = seatHeight();
       cumbre.seat.position.y = height;
       // Un poco hacia el centro del anillo: así se ve a quienes van en las sillas de al lado.
@@ -110,6 +127,11 @@ export function createCumbreRide({ park, random }) {
       lookTarget.set(cumbre.x + out.x * 40, height - lookDown, cumbre.z + out.z * 40);
       camera.lookAt(lookTarget);
       if (phase === 'drop') camera.position.x += (random() - 0.5) * 0.08;
+    },
+
+    onMateSay(id, kind) {
+      const mate = mateRiders.get(id);
+      if (mate && (kind === 'brave' || kind === 'early')) mateReacts(mate.rider, SAYINGS[kind].text, { cheer: kind === 'brave' });
     },
 
     status: () => `🗼 Subida ${Math.min(round + 1, ROUNDS)}/${ROUNDS} · ⭐ ${stars}`,
@@ -134,6 +156,10 @@ export function createCumbreRide({ park, random }) {
     },
 
     dispose() {
+      mateRiders.forEach(({ rider, place }) => {
+        place.chair.remove(rider.root);
+        place.rider.root.visible = true;
+      });
       cumbre.scream(false);
       cumbre.idle = true;
     },

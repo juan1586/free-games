@@ -4,7 +4,7 @@
  */
 import { localDay } from '../../core/date.js';
 import { createRandom } from '../../core/random.js';
-import { GOLDEN_BEANS, RIDES } from './worlds.js';
+import { ALL_RIDES, PARK_WORLDS, getWorldOfRide, isWorldOpen } from './worlds.js';
 
 export const MISSIONS_PER_DAY = 3;
 export const MISSION_COINS = 15;
@@ -21,8 +21,13 @@ export const MISSION_POOL = [
   mission('snitch', '🚨', 'Avísale al vigilante de alguien que se cuela', 'snitch', 1),
   mission('jumps-30', '🦘', 'Salta 30 veces', 'jump', 30),
   mission('queue-2', '⏳', 'Haz la fila completa 2 veces', 'queue', 2),
-  mission('bean', '🌟', 'Encuentra un grano de café dorado', 'bean', 1, (data) => data.goldenBeans.length < GOLDEN_BEANS.length),
-  ...RIDES.map((ride) => mission(`ride-${ride.id}`, ride.emoji, `Monta en ${ride.name}`, `ride-${ride.id}`, 1)),
+  mission('bean', '🌟', 'Encuentra un tesoro dorado (grano o huevo)', 'bean', 1, (data) =>
+    PARK_WORLDS.some((world) => isWorldOpen(world, data) && (data[world.treasure.key] ?? []).length < world.treasure.items.length),
+  ),
+  // Solo atracciones de parques que ya están abiertos.
+  ...ALL_RIDES.map((ride) =>
+    mission(`ride-${ride.id}`, ride.emoji, `Monta en ${ride.name}`, `ride-${ride.id}`, 1, (data) => isWorldOpen(getWorldOfRide(ride.id), data)),
+  ),
 ];
 
 const getMission = (id) => MISSION_POOL.find((item) => item.id === id);

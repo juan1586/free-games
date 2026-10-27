@@ -5,7 +5,7 @@
 import { createAvatar } from './avatar.js';
 import { EXTRAS, HATS, PANTS, SHIRTS, SKIN_TONES, randomLook } from './outfits.js';
 import { MAX_QUEUE, createQueue, cutInFront, isFull, joinQueue, leaveQueue, playerIndex, slotPosition, stepQueue } from './queue.js';
-import { RIDES, getRide } from './worlds.js';
+import { getRide } from './worlds.js';
 
 export const NAMES = [
   'Valen', 'Sofi', 'Mateo', 'Juanjo', 'Sara', 'Tomás', 'Mariana', 'Emilio', 'Luciana', 'Samuel',
@@ -62,8 +62,8 @@ function routeVia(from, to) {
   return route;
 }
 
-export function createCrowd({ kit, scene, random }) {
-  const queues = new Map(RIDES.map((ride) => [ride.id, createQueue(ride)]));
+export function createCrowd({ kit, scene, random, rides }) {
+  const queues = new Map(rides.map((ride) => [ride.id, createQueue(ride)]));
   const npcs = [];
   const guards = new Map();
   const playerEntry = { kind: 'player' };
@@ -96,7 +96,7 @@ export function createCrowd({ kit, scene, random }) {
 
   /** Elige a dónde va: casi siempre a una fila corta, a veces a pasear. */
   function chooseDestination(npc) {
-    const openRides = RIDES.filter((ride) => queues.get(ride.id).people.length < MAX_QUEUE - 3);
+    const openRides = rides.filter((ride) => queues.get(ride.id).people.length < MAX_QUEUE - 3);
     if (openRides.length && random() < 0.75) {
       const ride = openRides[Math.floor(random() * openRides.length)];
       const back = slotPosition(ride, MAX_QUEUE);
@@ -122,8 +122,8 @@ export function createCrowd({ kit, scene, random }) {
   for (let index = 0; index < NPC_COUNT; index += 1) {
     const npc = makePerson(NAMES[index % NAMES.length], randomLook(random));
     npc.route = [];
-    const ride = RIDES[index % RIDES.length];
-    if (index < RIDES.length * 3) {
+    const ride = rides[index % rides.length];
+    if (index < rides.length * 3) {
       placeInQueue(npc, ride.id);
       const slot = slotPosition(ride, queues.get(ride.id).people.length - 1);
       npc.x = slot.x;
@@ -138,7 +138,7 @@ export function createCrowd({ kit, scene, random }) {
   }
 
   // Vigilantes, a un lado de cada entrada.
-  RIDES.forEach((ride) => {
+  rides.forEach((ride) => {
     const guard = makePerson('Vigilante', GUARD_LOOK);
     const side = perpendicular(ride.queueDir);
     guard.x = ride.entrance.x + side.x * 1.9 - ride.queueDir.x * 0.6;

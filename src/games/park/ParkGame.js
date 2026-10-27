@@ -9,7 +9,7 @@ import { bindHoldButton, bindKeyboard } from '../../core/input.js';
 import { createMusicLoop, sounds } from '../../core/audio.js';
 import { trackEvent } from '../../core/analytics.js';
 import { getActivePlayer, getGameData, sanitizeName, updateGameData } from '../../core/player.js';
-import { createRandom } from '../../core/random.js';
+import { createRandom, randomSeed } from '../../core/random.js';
 import { el, navigate } from '../../ui/dom.js';
 import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
@@ -17,12 +17,13 @@ import { syncStickers } from '../../album/stickers.js';
 import { at, createKit } from './kit.js';
 import { createAvatar } from './avatar.js';
 import { currentOutfit } from './outfits.js';
-import { PARK_RADIUS, SPAWN, buildPark } from './world3d.js';
+import { PARK_RADIUS, SPAWN } from './parkBase.js';
+import { buildPark } from './parks.js';
 import { PERSON_RADIUS, createCrowd } from './crowd.js';
 import { groundHeight, isBlocked, resolveCollisions } from './collision.js';
 import { MAX_QUEUE, slotPosition, waitSeconds } from './queue.js';
 import { ALL_MISSIONS_BONUS, MISSION_COINS, describeMissions, recordMission, todaysMissions } from './missions.js';
-import { FIRST_RIDE_BONUS, GOLDEN_BEANS, RIDES, SNITCH_COINS, WELCOME_COINS, getRide } from './worlds.js';
+import { FIRST_RIDE_BONUS, PARK_WORLDS, SNITCH_COINS, WELCOME_COINS, getRide, isWorldOpen } from './worlds.js';
 import { RIDE_FACTORIES } from './rides/index.js';
 import { createJoystick } from './joystick.js';
 import { createFriends } from './friends.js';
@@ -55,15 +56,28 @@ const DANCE_SECONDS = 2;
 /** Tiempo mínimo entre dos saludos (para no llenar la pantalla de burbujas). */
 const EMOTE_COOLDOWN = 0.8;
 const FRIENDS_PANEL_EVERY = 0.3;
+/** Cada cuánto se manda la posición dentro de una atracción a las amigas que van juntas. */
+const RIDE_STATE_EVERY = 0.1;
+/** Si dos amigas suben a la vez, se sigue a la de id menor si llega en este tiempo (ms). */
+const BOARD_MERGE_MS = 2500;
 /** Semilla fija: el parque se ve siempre igual (mismas palmas, mismo cafetal). */
 const PARK_LAYOUT_SEED = 2024;
 
+/** Música de cada parque. */
 const MUSIC = {
-  bpm: 126,
-  melody:
-    'C5 E5 G5 E5 F5 A5 G5 - E5 G5 C6 G5 A5 G5 E5 - D5 F5 A5 F5 G5 E5 C5 - D5 E5 F5 D5 C5 - - -',
-  bass: 'C3 C3 F3 F3 C3 C3 G3 G3 C3 C3 F3 F3 G3 G3 C3 C3',
+  cafe: {
+    bpm: 126,
+    melody: 'C5 E5 G5 E5 F5 A5 G5 - E5 G5 C6 G5 A5 G5 E5 - D5 F5 A5 F5 G5 E5 C5 - D5 E5 F5 D5 C5 - - -',
+    bass: 'C3 C3 F3 F3 C3 C3 G3 G3 C3 C3 F3 F3 G3 G3 C3 C3',
+  },
+  panaca: {
+    bpm: 138,
+    melody: 'G4 G4 C5 C5 E5 E5 C5 - D5 D5 B4 B4 G4 - - - G4 G4 C5 C5 E5 E5 G5 - F5 E5 D5 B4 C5 - - -',
+    bass: 'C3 G3 C3 G3 G3 D3 G3 D3 C3 G3 C3 G3 G3 D3 C3 C3',
+  },
 };
+
+const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -82,9 +96,14 @@ function angleDiff(target, current) {
 }
 
 export class ParkGame {
-  constructor(root, { friends = false } = {}) {
+  constructor(root, { worldIndex = 0, friends = false } = {}) {
     this.kit = createKit();
     this.withFriends = friends;
+    // Con amigas manda el parque de la sala (aunque aún no se haya abierto); sola, solo los abiertos.
+    const world = PARK_WORLDS[worldIndex] ?? PARK_WORLDS[0];
+    this.world = friends || isWorldOpen(world, getGameData('park')) ? world : PARK_WORLDS[0];
+    this.rides = this.world.rides;
+    this.treasure = this.world.treasure;
     this.buildDom(root);
     try {
       this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
@@ -96,8 +115,8 @@ export class ParkGame {
     this.aspect = 16 / 9;
 
     this.scene = new THREE.Scene();
-    this.park = buildPark(this.kit, this.scene, createRandom(PARK_LAYOUT_SEED));
-    this.crowd = createCrowd({ kit: this.kit, scene: this.scene, random: Math.random });
+    this.park = buildPark(this.kit, this.scene, createRandom(PARK_LAYOUT_SEED), this.world);
+    this.crowd = createCrowd({ kit: this.kit, scene: this.scene, random: Math.random, rides: this.rides });
     this.friends = friends ? createFriends({ kit: this.kit, scene: this.scene, onEvent: (event) => this.handleFriendEvent(event) }) : null;
     this.camera = new THREE.PerspectiveCamera(60, this.aspect, 0.1, 500);
 
@@ -136,7 +155,7 @@ export class ParkGame {
 
     this.buildCoins();
     this.buildBeans();
-    this.music = createMusicLoop(MUSIC);
+    this.music = createMusicLoop(MUSIC[this.world.id] ?? MUSIC.cafe);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.stage);
@@ -162,12 +181,12 @@ export class ParkGame {
   buildDom(root) {
     const data = getGameData('park');
     this.header = createGameHeader({
-      title: this.withFriends ? '👭 Parque del Café' : '☕ Parque del Café',
+      title: `${this.withFriends ? '👭' : this.world.emoji} ${this.world.name}`,
       backPath: '/parque',
       onPause: () => this.pause(),
       items: [
         { key: 'coins', label: 'Monedas', icon: '🪙', value: data.coins },
-        { key: 'beans', label: 'Granos dorados', icon: '🌟', value: `${data.goldenBeans.length}/${GOLDEN_BEANS.length}` },
+        { key: 'beans', label: this.treasure.name, icon: this.treasure.icon, value: `${(data[this.treasure.key] ?? []).length}/${this.treasure.items.length}` },
         { key: 'rides', label: 'Viajes', icon: '🎢', value: data.totalRides },
       ],
     });
@@ -532,7 +551,7 @@ export class ParkGame {
   }
 
   placeCoin(entry) {
-    const queueSegments = RIDES.map((ride) => [slotPosition(ride, -1), slotPosition(ride, MAX_QUEUE + 1)]);
+    const queueSegments = this.rides.map((ride) => [slotPosition(ride, -1), slotPosition(ride, MAX_QUEUE + 1)]);
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const angle = Math.random() * Math.PI * 2;
       const radius = 6 + Math.random() * (PARK_RADIUS - 8);
@@ -549,8 +568,8 @@ export class ParkGame {
   }
 
   buildBeans() {
-    const collected = getGameData('park').goldenBeans;
-    this.beans = GOLDEN_BEANS.filter((bean) => !collected.includes(bean.id)).map((bean) => {
+    const collected = getGameData('park')[this.treasure.key] ?? [];
+    this.beans = this.treasure.items.filter((bean) => !collected.includes(bean.id)).map((bean) => {
       const mesh = at(new THREE.Group(), bean.x, bean.y, bean.z);
       const body = this.kit.sphere(0.4, 0xffd21f, 12, { emissive: 0x6a4a00 });
       body.scale.set(0.8, 1.1, 0.6);
@@ -595,12 +614,13 @@ export class ParkGame {
       if (!near(entry.mesh.position, PICK_RADIUS + 0.2)) return true;
       this.scene.remove(entry.mesh);
       const data = getGameData('park');
-      const goldenBeans = [...data.goldenBeans, entry.bean.id];
-      updateGameData('park', { goldenBeans, coins: data.coins + BEAN_COINS });
+      const { key, icon, item, items } = this.treasure;
+      const found = [...(data[key] ?? []), entry.bean.id];
+      updateGameData('park', { [key]: found, coins: data.coins + BEAN_COINS });
       sounds.achievement();
-      this.notify(`🌟 ¡Grano dorado! ${goldenBeans.length}/${GOLDEN_BEANS.length} · +${BEAN_COINS} 🪙`);
+      this.notify(`${icon} ¡${capitalize(item)}! ${found.length}/${items.length} · +${BEAN_COINS} 🪙`);
       this.friends?.say('bean');
-      trackEvent('parque-grano-dorado', 'Parque · grano dorado');
+      trackEvent(`parque-tesoro-${this.world.id}`, `Parque · ${item} en ${this.world.name}`);
       this.progress('bean');
       this.refreshHud();
       this.checkStickers();
@@ -621,7 +641,7 @@ export class ParkGame {
     if (player.y > 1) return null;
     let best = null;
     let bestDistance = QUEUE_PROMPT_DISTANCE;
-    RIDES.forEach((ride) => {
+    this.rides.forEach((ride) => {
       const distance = distanceToSegment(player, slotPosition(ride, -1), slotPosition(ride, MAX_QUEUE));
       if (distance < bestDistance) {
         best = ride;
@@ -781,7 +801,19 @@ export class ParkGame {
 
   // ---------- Atracciones ----------
 
-  startRide(ride, via) {
+  /**
+   * Sube a la atracción. `group` = { mates, seed, leaderId } cuando una amiga se llevó a la jugadora;
+   * si no, se lleva a las amigas que estaban en la misma fila.
+   */
+  startRide(ride, via, group = null) {
+    if (!group && this.friends) {
+      const mates = this.friends.list().filter((friend) => friend.target?.mode === 'queue' && friend.target.rideId === ride.id);
+      if (mates.length) {
+        group = { mates, seed: randomSeed(), leaderId: this.friends.myId };
+        this.friends.board(ride.id, group.seed, mates.map((friend) => friend.id));
+        this.notify(`👭 ¡${mates.map((friend) => friend.name).join(' y ')} ${mates.length > 1 ? 'suben' : 'sube'} contigo!`);
+      }
+    }
     if (this.cutter) this.crowd.giveUpCutter(this.cutter);
     this.hideCutter();
     this.queueRide = null;
@@ -794,11 +826,22 @@ export class ParkGame {
       park: this.park,
       scene: this.scene,
       look: this.look,
-      random: Math.random,
+      // Juntas, todas usan la misma semilla: la misma caída, los mismos globos, el mismo camino.
+      random: group ? createRandom(group.seed) : Math.random,
+      mates: (group?.mates ?? []).map(({ id, name, emoji, look }) => ({ id, name, emoji, look })),
+      myId: this.friends?.myId ?? 'h',
       // Lo que pasa en la atracción (p. ej. un grito) lo ven las amigas.
       announce: (kind) => this.friends?.say(kind, ride.id),
     });
-    this.rideRun = { ride, session };
+    this.rideRun = {
+      ride,
+      via,
+      session,
+      mateIds: new Set((group?.mates ?? []).map((friend) => friend.id)),
+      leaderId: group?.leaderId ?? null,
+      startedAt: performance.now(),
+      stateTimer: 0,
+    };
     Object.assign(this.rideInput, { action: false, actionPressed: false, lookDelta: 0 });
     const { action, steer } = session.controls;
     this.actionButton.querySelector('.park-action__icon').textContent = action.icon;
@@ -816,6 +859,13 @@ export class ParkGame {
     this.rideInput.left = this.keys.left || this.touchSteer.left;
     this.rideInput.right = this.keys.right || this.touchSteer.right;
     session.update(delta, this.rideInput);
+    if (this.friends && session.mateState && this.rideRun.mateIds.size) {
+      this.rideRun.stateTimer -= delta;
+      if (this.rideRun.stateTimer <= 0) {
+        this.rideRun.stateTimer = RIDE_STATE_EVERY;
+        this.friends.rideState(this.rideRun.ride.id, session.mateState());
+      }
+    }
     this.rideInput.actionPressed = false;
     this.rideInput.lookDelta = 0;
     const status = session.status();
@@ -847,10 +897,17 @@ export class ParkGame {
     const data = getGameData('park');
     const firstTime = !data.ridesDone[ride.id];
     const bonus = firstTime ? FIRST_RIDE_BONUS : 0;
+    const wasOpen = PARK_WORLDS.map((world) => isWorldOpen(world, data));
     updateGameData('park', {
       coins: data.coins + result.coins + bonus,
       ridesDone: { ...data.ridesDone, [ride.id]: (data.ridesDone[ride.id] ?? 0) + 1 },
       totalRides: data.totalRides + 1,
+    });
+    // ¿Este viaje abrió un parque nuevo?
+    PARK_WORLDS.forEach((world, index) => {
+      if (wasOpen[index] || !isWorldOpen(world, getGameData('park'))) return;
+      this.notify(`🗺️ ¡Abriste ${world.emoji} ${world.name}! Búscalo al salir del parque`);
+      trackEvent(`parque-abre-${world.id}`, `Parque · abre ${world.name}`);
     });
     this.progress('ride');
     this.progress(`ride-${ride.id}`);
@@ -963,7 +1020,7 @@ export class ParkGame {
   refreshHud() {
     const data = getGameData('park');
     this.header.set('coins', data.coins);
-    this.header.set('beans', `${data.goldenBeans.length}/${GOLDEN_BEANS.length}`);
+    this.header.set('beans', `${(data[this.treasure.key] ?? []).length}/${this.treasure.items.length}`);
     this.header.set('rides', data.totalRides);
   }
 
@@ -1050,6 +1107,7 @@ export class ParkGame {
       const ride = getRide(target?.rideId);
       let doing = '🔌 Conectando…';
       if (friend.flashTimer > 0) doing = friend.flash;
+      else if (target?.mode === 'ride' && ride && this.rideRun?.mateIds.has(friend.id)) doing = `${ride.emoji} ¡Contigo en ${ride.name}!`;
       else if (target?.mode === 'ride' && ride) doing = `${ride.emoji} En ${ride.name}`;
       else if (target?.mode === 'queue' && ride) doing = `⏳ Fila de ${ride.name}`;
       else if (target) doing = target.speed > 0.5 ? '🚶 Paseando' : '🙂 Por aquí';
@@ -1076,6 +1134,15 @@ export class ParkGame {
     }
     const { friend } = event;
     const who = `${friend.emoji} ${friend.name}`;
+    if (event.type === 'board') {
+      this.handleBoard(event);
+      return;
+    }
+    if (event.type === 'rideState') {
+      if (this.rideRun?.ride.id === event.rideId && this.rideRun.mateIds.has(friend.id)) this.rideRun.session.onMateState?.(friend.id, event);
+      return;
+    }
+    if (this.rideRun?.mateIds.has(friend.id) && event.rideId === this.rideRun.ride.id) this.rideRun.session.onMateSay?.(friend.id, event.kind);
     if (event.type === 'left') {
       this.notify(`👋 ${who} se fue del parque`);
       this.refreshFriends();
@@ -1088,6 +1155,29 @@ export class ParkGame {
     else if (event.kind === 'follow') this.notify(`🏃 ${who} dice: ¡Sígueme!`);
     if (SAYINGS[event.kind]?.emote) sounds.click();
     this.refreshFriends();
+  }
+
+  /** Una amiga subió a una atracción y me llevó con ella (estaba en su misma fila). */
+  handleBoard({ friend, rideId, seed, ids }) {
+    const myId = this.friends.myId;
+    if (!ids.includes(myId)) return;
+    const ride = getRide(rideId);
+    const mates = [friend, ...this.friends.list().filter((other) => other.id !== friend.id && ids.includes(other.id))];
+    const group = { mates, seed, leaderId: friend.id };
+    if (this.status === 'queue' && this.queueRide?.id === rideId) {
+      this.crowd.leavePlayer(rideId);
+      this.notify(`👭 ${friend.emoji} ${friend.name} te guardó puesto`);
+      this.startRide(ride, 'queue', group);
+      return;
+    }
+    // Las dos subieron casi a la vez: manda la de id menor, para que todas vean lo mismo.
+    const run = this.rideRun;
+    if (this.status === 'ride' && run?.ride.id === rideId && performance.now() - run.startedAt < BOARD_MERGE_MS && friend.id < (run.leaderId ?? myId)) {
+      run.session.dispose();
+      this.rideRun = null;
+      // Ya contó como fila al subir la primera vez.
+      this.startRide(ride, run.via === 'queue' ? 'merged' : run.via, group);
+    }
   }
 
   // ---------- Pausa y salida ----------

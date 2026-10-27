@@ -3,6 +3,8 @@
  * las carreras (core/race.js). Sin three.js. Todo lo que llega de otra tablet se valida aquí.
  */
 import { getGameData } from '../../core/player.js';
+import { MAX_PLAYERS, isPlayerId } from '../../core/race.js';
+import { MAX_SEED } from '../../core/random.js';
 import { outfitIds } from './outfits.js';
 import { PARK_WORLDS, getRide } from './worlds.js';
 
@@ -28,6 +30,14 @@ export const SAYINGS = {
   fastpass: { text: '🎟️ ¡Pase rápido!' },
   ride: { text: '🎉 ¡Qué chévere!' },
   bean: { text: '🌟 ¡Un grano dorado!' },
+  // Dentro de una atracción, para las amigas que van juntas.
+  brave: { text: '⭐ ¡Valiente!' },
+  early: { text: '🙈 ¡Muy pronto!' },
+  photo: { text: '📸 ¡Lo tengo!' },
+  yum: { text: '☕ ¡Un grano!' },
+  oink: { text: '🐷 ¡Corre, cerdito!' },
+  win: { text: '🏆 ¡Gané!' },
+  milk: { text: '🥛 ¡Leche!' },
 };
 export const EMOTES = Object.keys(SAYINGS).filter((kind) => SAYINGS[kind].emote);
 
@@ -77,6 +87,21 @@ export function parseParkPos(message) {
     mode: NET_MODES.includes(message.m) ? message.m : 'walk',
     rideId: getRide(message.r) ? message.r : '',
   };
+}
+
+/** Una amiga sube a una atracción y se lleva a las que estaban en su fila. Devuelve { rideId, seed, ids } o null. */
+export function parseBoard(message) {
+  const { ride, seed, ids } = message;
+  if (!getRide(ride) || !Number.isInteger(seed) || seed < 0 || seed > MAX_SEED) return null;
+  if (!Array.isArray(ids) || !ids.length || ids.length >= MAX_PLAYERS || !ids.every(isPlayerId)) return null;
+  return { rideId: ride, seed, ids };
+}
+
+/** Posición de una amiga dentro de una atracción (p. ej. su carro chocón). */
+export function parseRideState(message) {
+  const { x, z, h } = message;
+  if (![x, z, h].every(isFiniteNumber) || !getRide(message.ride)) return null;
+  return { rideId: message.ride, x: clampNumber(x, -20, 20), z: clampNumber(z, -20, 20), heading: h % (Math.PI * 2) };
 }
 
 /** Algo que dijo una amiga. Devuelve { kind, rideId } o null. */

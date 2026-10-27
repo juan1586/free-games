@@ -36,8 +36,9 @@ src/games/tetris/  TetrisGame, levels, setup
 src/games/geo/     physics (motor sin DOM), levels, shapes (apariencias y dibujo del jugador),
                    obstacles (dibujo de piezas), achievements (retos y estrellas), GeoGame, setup,
                    race (config/apariencia/posición de carrera), raceLobby
-src/games/park/    worlds (atracciones, granos dorados, mundos), outfits (ropa), missions, queue (filas, sin DOM),
-                   collision (sin three), kit (materiales/etiquetas three), avatar, props, world3d (el parque),
+src/games/park/    worlds (parques, atracciones, tesoros, desbloqueo), outfits (ropa), missions, queue (filas, sin DOM),
+                   collision (sin three), kit (materiales/etiquetas three), avatar, props, parkBase (lo común),
+                   world3d (Parque del Café), worldPanaca (Granja Panaca), parks (elige el constructor),
                    crowd (visitantes y vigilantes), riders (visitantes sentados en las atracciones), joystick,
                    rides/ (un minijuego por atracción), race + raceLobby + friends (parque con amigas), ParkGame, setup
 src/styles/        tokens.css (paleta, tipografía Fredoka, sombras), base, menu, games
@@ -83,7 +84,9 @@ scripts/           check-geo-levels.mjs
 - Las atracciones del parque llevan visitantes sentados (`createRider` en `riders.js`): gritan en las bajadas (`moveTrain`, `cumbre.scream`), saludan desde la rueda o se quejan en los chocones. El vigilante camina hasta el colado, lo regaña y lo manda al final de la fila (`updateGuard` en `crowd.js`).
 - Saludos (`SAYINGS`/`EMOTES` en `park/race.js`, teclas 1-5): burbuja sobre la jugadora, los visitantes cercanos contestan (`crowd.reactTo`) y las amigas los ven. Solo se envían claves fijas, nunca texto libre.
 - **Parque con amigas** (`#/parque/amigos`, luego `#/parque/jugar?amigos=1`): usa la sala de las carreras (`mountRaceLobby` con `labels`, juego `park`). `friends.js` envía `pos` ~10 veces/s (`x y z h s a m r`) y `say` {kind, ride}; cada tablet simula sus propios visitantes y filas, y a las amigas se las dibuja donde dicen estar (ocultas mientras van en una atracción, con su estado en el panel 👭). Si alguien se va o se cierra la sala, se sigue jugando sola. Premio: `park.friendVisits` y la pegatina «Parque con amigas».
-- Nuevos mundos (Panaca, playa…): están anunciados en `UPCOMING_WORLDS`; habría que generalizar `buildPark` por mundo.
+- **Varios parques** (`PARK_WORLDS` en `worlds.js`): cada uno con `rides`, `treasure` (`key` = campo de `park` donde se guardan: `goldenBeans`, `goldenEggs`) y `unlock` opcional (`isWorldOpen`). La Granja Panaca se abre montando en todas las atracciones del café. Para añadir uno: sus atracciones e ítems en `worlds.js`, un constructor `world<Nombre>.js` que empiece con `buildParkBase` (registrarlo en `parks.js`), sus minijuegos en `rides/index.js`, su música en `MUSIC` de `ParkGame.js` y sus pegatinas. Los próximos están en `UPCOMING_WORLDS`.
+- `rides/drive.js` es el paseo manejando con tema (El Jipe y el Tractor); `rides/cerditos.js` usa la pista del parque; `rides/ordeno.js` es un juego de ritmo con su propia escena.
+- **Montar juntas**: cuando a una amiga le toca subir (o paga el pase), se lleva a las que están en su misma fila (mensaje `board` {ride, seed, ids}). Todas usan esa semilla en el minijuego (`ctx.random`), así ven la misma caída, globos o camino. Cada minijuego recibe `ctx.mates` (las sienta a tu lado o en tu cabina), `ctx.myId` (orden común de salida) y `announce(kind)`; puede definir `onMateSay(id, kind)` y, si las amigas se mueven (chocones, cerditos), `mateState()` / `onMateState(id, state)` (mensaje `rstate`). Si dos suben a la vez, manda la de id menor (`BOARD_MERGE_MS`).
 
 ## Modo carrera (Dino y Salto Geométrico, de 2 a 4 jugadores, cada uno en su dispositivo)
 
