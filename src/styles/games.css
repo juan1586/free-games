@@ -1076,3 +1076,121 @@
   flex-wrap: wrap;
   justify-content: center;
 }
+
+/* ---------- Carrera con amiga (Salto Geométrico) ---------- */
+
+.setup__header .star-pill--trophy + .star-pill {
+  margin-left: 0;
+}
+
+.geo-playbar__race {
+  flex: 0 1 auto;
+}
+
+.race-setup {
+  max-width: 720px;
+}
+
+.race-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.race-card {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 12px;
+  text-align: center;
+}
+
+.race-card .btn {
+  width: 100%;
+}
+
+.race-card--wide {
+  padding-block: 28px;
+}
+
+.race-card__emoji {
+  font-size: 2.6rem;
+  line-height: 1;
+}
+
+.race-code {
+  padding: 10px 26px;
+  border-radius: var(--radius-lg);
+  background: var(--c-purple-soft);
+  color: var(--c-purple-dark);
+  font-size: clamp(3rem, 14vw, 5rem);
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-indent: 0.25em;
+  line-height: 1.1;
+  user-select: all;
+}
+
+.race-code-input {
+  padding: 12px 18px;
+  text-align: center;
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+}
+
+.race-rival {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 12px 28px;
+  border-radius: var(--radius-md);
+  background: var(--c-white);
+  box-shadow: var(--shadow-sm);
+}
+
+.race-rival__avatar {
+  font-size: 3rem;
+  line-height: 1.1;
+}
+
+.race-rival small {
+  color: var(--c-ink-soft);
+}
+
+.race-lobby__waiting {
+  font-weight: 600;
+  color: var(--c-purple-dark);
+  animation: race-pulse 1.4s ease-in-out infinite;
+}
+
+.race-lobby__status {
+  min-height: 1.4em;
+  text-align: center;
+  font-weight: 600;
+}
+
+.race-lobby__status[data-tone='error'] {
+  color: #d63a3a;
+}
+
+.race-lobby__status[data-tone='warn'] {
+  color: var(--c-orange);
+}
+
+.race-lobby__note {
+  text-align: center;
+}
+
+@keyframes race-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .race-lobby__waiting {
+    animation: none;
+  }
+}

@@ -49,6 +49,9 @@ export const ACHIEVEMENTS = [
   { id: 'stylist', icon: '🎨', title: 'A la moda', description: 'Cambia tu apariencia 3 veces.', check: (data) => data.skinChanges >= 3 },
   { id: 'jumper', icon: '🦘', title: 'Saltarina', description: 'Salta 500 veces.', check: (data) => data.totalJumps >= 500 },
   { id: 'persistent', icon: '💪', title: 'Nunca me rindo', description: 'Haz 100 intentos.', check: (data) => data.totalAttempts >= 100 },
+  { id: 'first-race', icon: '🏁', title: 'Primera carrera', description: 'Corre una carrera con una amiga.', check: (data) => data.racesPlayed >= 1 },
+  { id: 'race-win', icon: '🏆', title: 'Campeona', description: 'Gana una carrera con amiga.', check: (data) => data.raceWins >= 1 },
+  { id: 'race-wins-3', icon: '🥇', title: 'Tres copas', description: 'Gana 3 carreras con amigas.', check: (data) => data.raceWins >= 3 },
   {
     id: 'all-levels',
     icon: '🌈',

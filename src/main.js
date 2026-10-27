@@ -14,6 +14,8 @@ import { mountTetrisSetup } from './games/tetris/setup.js';
 import { mountTetrisGame } from './games/tetris/TetrisGame.js';
 import { mountGeoSetup } from './games/geo/setup.js';
 import { mountGeoGame } from './games/geo/GeoGame.js';
+import { mountGeoRaceLobby } from './games/geo/raceLobby.js';
+import { getSession, isConnected } from './core/race.js';
 
 const app = document.getElementById('app');
 
@@ -36,7 +38,16 @@ const ROUTES = {
   '/tetris': () => mountTetrisSetup(app),
   '/tetris/jugar': (query) => mountTetrisGame(app, { worldIndex: parseWorld(query) }),
   '/geo': () => mountGeoSetup(app),
-  '/geo/jugar': (query) => mountGeoGame(app, { levelIndex: parseLevel(query), practice: query.get('practica') === '1' }),
+  '/geo/carrera': (query) => mountGeoRaceLobby(app, { levelIndex: parseLevel(query) }),
+  '/geo/jugar': (query) => {
+    const race = query.get('carrera') === '1';
+    // Sin sala abierta (p. ej. al recargar la página) se vuelve a la sala de espera.
+    if (race && !(isConnected() && getSession().meta.config && getSession().meta.rival)) {
+      navigate(`/geo/carrera?nivel=${parseLevel(query)}`);
+      return null;
+    }
+    return mountGeoGame(app, { levelIndex: parseLevel(query), practice: query.get('practica') === '1', race });
+  },
 };
 
 let cleanupCurrentView = null;

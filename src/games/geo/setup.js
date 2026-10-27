@@ -30,6 +30,7 @@ export function mountGeoSetup(root) {
   const shapeCanvases = [];
 
   const starPill = el('span', { className: 'star-pill' });
+  const trophyPill = el('span', { className: 'star-pill star-pill--trophy', text: `🏆 ${data.raceWins}`, attrs: { title: 'Copas ganadas en carreras' } });
   const refreshStars = () => (starPill.textContent = `⭐ ${countStars(data)} / ${MAX_STARS}`);
   refreshStars();
 
@@ -129,6 +130,11 @@ export function mountGeoSetup(root) {
     updateGameData('geo', { speed: speedId });
     data = getGameData('geo');
     speedButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.speed === speedId)));
+  }
+
+  function startRace() {
+    sounds.coin();
+    navigate(`/geo/carrera?nivel=${selectedLevel}`);
   }
 
   function startGame() {
@@ -267,6 +273,7 @@ export function mountGeoSetup(root) {
             on: { click: () => navigate('/') },
           }),
           el('h1', { className: 'setup__title', text: '🔷 Salto Geométrico' }),
+          trophyPill,
           starPill,
         ]),
         el('section', { className: 'card setup__section' }, [
@@ -285,6 +292,12 @@ export function mountGeoSetup(root) {
             text: '¡A saltar! 🔷',
             attrs: { type: 'button' },
             on: { click: startGame },
+          }),
+          el('button', {
+            className: 'btn btn--secondary btn--lg geo-playbar__race',
+            text: '🏁 Carrera con amiga',
+            attrs: { type: 'button' },
+            on: { click: startRace },
           }),
         ]),
         el('section', { className: 'card setup__section' }, [

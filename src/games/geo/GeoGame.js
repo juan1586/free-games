@@ -2,10 +2,11 @@ import { createGameLoop } from '../../core/gameLoop.js';
 import { setupCanvas } from '../../core/canvas.js';
 import { bindHoldButton, bindKeyboard } from '../../core/input.js';
 import { createMusicLoop, sounds } from '../../core/audio.js';
-import { getGameData, updateGameData } from '../../core/player.js';
+import { getActivePlayer, getGameData, updateGameData } from '../../core/player.js';
 import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
+import { getSession, leaveRoom, onDisconnect, onMessage, send } from '../../core/race.js';
 import {
   CEILING_Y,
   PLAYER_SIZE,
@@ -23,6 +24,7 @@ import { GEO_LEVELS } from './levels.js';
 import { PORTAL_STYLES, drawFinish, drawObjects } from './obstacles.js';
 import { RAINBOW, drawPlayer, resolveSkin } from './shapes.js';
 import { findNewAchievements } from './achievements.js';
+import { parseRaceMessage } from './race.js';
 
 /** El alto lógico es fijo; el ancho se adapta a la pantalla (más ancho en celular horizontal). */
 const MIN_VIEW_WIDTH = 800;
@@ -48,6 +50,16 @@ const COINS_PER_LEVEL = 3;
 const WIN_FLY_UP_SPEED = 160;
 const SPEED_LINE_COUNT = 14;
 const TURBO_LINE_SPEED = 1400;
+const COUNTDOWN_SECONDS = 3;
+const GO_LABEL_SECONDS = 0.7;
+const POS_SEND_SECONDS = 1 / 15;
+// Tras la primera llegada a la meta se espera un poco por si la otra llegó antes en su reloj.
+const RESULT_GRACE_MS = 1200;
+const LOSER_PODIUM_DELAY_MS = 1600;
+const RIVAL_FOLLOW_RATE = 12;
+const RIVAL_PREDICT_SECONDS = 0.15;
+const RIVAL_SNAP_DISTANCE = 300;
+const RIVAL_ALPHA = 0.55;
 // Evita que el redondeo de coma flotante dé 3 o 5 pasos de física por fotograma en lugar de 4.
 const STEP_EPSILON = 1e-9;
 
@@ -56,18 +68,26 @@ const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const wrap = (value, span) => ((value % span) + span) % span;
 
+const formatRaceTime = (ms) => (ms === undefined ? '—' : `${(ms / 1000).toFixed(1)} s`);
+
 const createLevelProgress = () => ({ best: 0, attempts: 0, completed: false, practiceCompleted: false, coins: [false, false, false] });
 
 export class GeoGame {
-  constructor(root, { levelIndex, practice }) {
+  constructor(root, { levelIndex, practice, race = false }) {
     const data = getGameData('geo');
-    this.levelIndex = clamp(levelIndex, 0, Math.min(data.unlockedLevel, GEO_LEVELS.length - 1));
+    // En carrera manda la sala: la invitada puede correr un nivel que aún no tiene (no lo desbloquea).
+    this.race = race ? getSession() : null;
+    const raceConfig = this.race?.meta.config;
+    this.levelIndex = this.race ? raceConfig.levelIndex : clamp(levelIndex, 0, Math.min(data.unlockedLevel, GEO_LEVELS.length - 1));
     this.definition = GEO_LEVELS[this.levelIndex];
     this.world = this.definition.world;
     this.palette = this.world.palette;
-    this.practice = practice;
+    this.practice = practice && !this.race;
+    this.useCheckpoints = this.practice || Boolean(this.race);
+    this.recordsProgress = !this.useCheckpoints;
+    if (this.race) this.rival = this.createRival(this.race.meta.rival);
     this.skin = resolveSkin(data.skin);
-    this.speed = getSpeed(data.speed);
+    this.speed = getSpeed(this.race ? raceConfig.speedId : data.speed);
     this.level = loadLevel(this.definition, this.world.speed * this.speed.factor);
     this.turboHeld = false;
     this.turboAmount = 0;
@@ -105,35 +125,45 @@ export class GeoGame {
     this.newAttempt();
     this.status = 'ready';
     this.loop.start();
+    if (this.race) this.startRaceSession();
   }
 
   buildDom(root) {
     const speedTag = this.speed.id === 'normal' ? '' : ` ${this.speed.icon}`;
     const title = `${this.world.emoji} ${this.definition.label} ${this.definition.name}${speedTag}`;
+    const items = this.race
+      ? [
+          { key: 'progress', label: 'Tú', icon: getActivePlayer()?.avatar ?? '📊', value: '0%' },
+          { key: 'rival', label: this.rival.name, icon: this.rival.avatar, value: '0%' },
+          { key: 'time', label: 'Tiempo', icon: '⏱️', value: '0 s' },
+        ]
+      : [
+          { key: 'progress', label: 'Avance', icon: '📊', value: '0%' },
+          { key: 'attempts', label: 'Intento', icon: '🔁', value: 1 },
+          { key: 'coins', label: 'Monedas', icon: '🪙', value: `0/${COINS_PER_LEVEL}` },
+          { key: 'best', label: 'Récord', icon: '🏆', value: `${this.best}%` },
+        ];
+    let titlePrefix = '';
+    if (this.race) titlePrefix = '🏁 ';
+    else if (this.practice) titlePrefix = '🚩 ';
     this.header = createGameHeader({
-      title: this.practice ? `🚩 ${title}` : title,
+      title: `${titlePrefix}${title}`,
       backPath: '/geo',
       onPause: () => this.pause(),
-      items: [
-        { key: 'progress', label: 'Avance', icon: '📊', value: '0%' },
-        { key: 'attempts', label: 'Intento', icon: '🔁', value: 1 },
-        { key: 'coins', label: 'Monedas', icon: '🪙', value: `0/${COINS_PER_LEVEL}` },
-        { key: 'best', label: 'Récord', icon: '🏆', value: `${this.best}%` },
-      ],
+      items,
     });
 
     this.canvas = el('canvas', {
       className: 'stage__canvas stage__canvas--geo',
       attrs: { width: MIN_VIEW_WIDTH, height: VIEW_HEIGHT, 'aria-label': 'Juego Salto Geométrico' },
     });
-    this.hint = el('div', { className: 'stage__hint' }, [
-      el('strong', { text: '¡Toca o pulsa Espacio para empezar!' }),
-      el('span', {
-        text: this.practice
-          ? 'Modo práctica: aparecen banderas 🚩 y vuelves a la última al chocar.'
-          : 'Mantén pulsado para saltar seguido · Shift / ⚡: turbo · P: pausa',
-      }),
-    ]);
+    this.hintTitle = el('strong', { text: '¡Toca o pulsa Espacio para empezar!' });
+    this.hintText = el('span', {
+      text: this.practice
+        ? 'Modo práctica: aparecen banderas 🚩 y vuelves a la última al chocar.'
+        : 'Mantén pulsado para saltar seguido · Shift / ⚡: turbo · P: pausa',
+    });
+    this.hint = el('div', { className: 'stage__hint' }, [this.hintTitle, this.hintText]);
     this.stage = el('div', { className: `stage stage--geo geo-world--${this.world.id}` }, [this.canvas, this.hint]);
 
     this.jumpButton = createTouchButton({ icon: '⬆️', label: 'Saltar', variant: 'jump' });
@@ -257,12 +287,25 @@ export class GeoGame {
   }
 
   pause() {
-    if (this.status !== 'running' && this.status !== 'ready') return;
+    if (!['running', 'ready', 'waiting', 'countdown'].includes(this.status)) return;
     this.pausedFrom = this.status;
     this.status = 'paused';
     this.turboHeld = false;
     this.loop.stop();
     this.music.stop();
+    if (this.race) {
+      showModal({
+        emoji: '⏸️',
+        title: 'Pausa',
+        message: this.raceStartedAt ? '¡Ojo! En la carrera el reloj sigue corriendo.' : 'La carrera empieza cuando vuelvas.',
+        escapeIndex: 0,
+        actions: [
+          { label: 'Continuar ▶', variant: 'primary', onClick: () => this.resume() },
+          { label: 'Salir', onClick: () => navigate('/geo') },
+        ],
+      });
+      return;
+    }
     const otherMode = this.practice ? 'normal' : 'práctica 🚩';
     showModal({
       emoji: '⏸️',
@@ -283,6 +326,8 @@ export class GeoGame {
     this.held = false;
     this.loop.start();
     if (this.status === 'running') this.music.start();
+    // Si la amiga avisó de que estaba lista mientras estábamos en pausa, se le vuelve a preguntar.
+    if (this.race && this.status === 'waiting') send({ type: 'ready' });
   }
 
   restart() {
@@ -307,6 +352,9 @@ export class GeoGame {
     if (this.flash) this.flash.life -= delta;
     const turboTarget = this.turboHeld && this.status === 'running' ? 1 : 0;
     this.turboAmount += (turboTarget - this.turboAmount) * Math.min(1, delta * 10);
+
+    if (this.status === 'countdown') this.updateCountdown(delta);
+    if (this.race) this.updateRace(delta);
 
     if (this.status === 'running') {
       this.accumulator += delta;
@@ -373,7 +421,7 @@ export class GeoGame {
   collectCoin({ index, x, y }) {
     sounds.coin();
     this.spawnBurst(x, y, '#ffd93d', 14, 'star');
-    if (this.practice) return;
+    if (!this.recordsProgress) return;
     if (!this.savedCoins[index]) {
       this.savedCoins[index] = true;
       this.saveLevel({ coins: [...this.savedCoins] });
@@ -381,7 +429,7 @@ export class GeoGame {
   }
 
   placeCheckpoint() {
-    if (!this.practice) return;
+    if (!this.useCheckpoints) return;
     const state = this.state;
     const isStable = state.mode === 'rocket' || state.mode === 'plane' || state.onGround;
     if (state.time - this.lastCheckpointTime < CHECKPOINT_EVERY_SECONDS || !isStable) return;
@@ -399,7 +447,7 @@ export class GeoGame {
     const { x, y } = this.playerCenter();
     this.spawnExplosion(x, y);
 
-    if (!this.practice) {
+    if (this.recordsProgress) {
       const percent = Math.floor(progressOf(this.state, this.level) * 100);
       const progress = this.levelProgress();
       const isNewBest = percent > progress.best;
@@ -411,7 +459,7 @@ export class GeoGame {
     this.announceAchievements(findNewAchievements(getGameData('geo')));
 
     this.timer = setTimeout(() => {
-      this.newAttempt({ fromCheckpoint: this.practice });
+      this.newAttempt({ fromCheckpoint: this.useCheckpoints });
       this.status = 'running';
       // Si la pestaña se ocultó durante la explosión, el bucle está parado: mostramos la pausa.
       if (!this.loop.isRunning()) {
@@ -419,7 +467,7 @@ export class GeoGame {
         return;
       }
       this.music.start();
-      const shouldSuggestPractice = !this.practice && !this.practiceTipShown && this.attempts > PRACTICE_TIP_AFTER_ATTEMPTS;
+      const shouldSuggestPractice = this.recordsProgress && !this.practiceTipShown && this.attempts > PRACTICE_TIP_AFTER_ATTEMPTS;
       if (shouldSuggestPractice) {
         this.practiceTipShown = true;
         this.showBanner('💡 Prueba el modo práctica 🚩 (pausa)', 2600);
@@ -433,6 +481,10 @@ export class GeoGame {
     this.music.stop();
     sounds.win();
     this.spawnConfetti();
+    if (this.race) {
+      this.finishRace();
+      return;
+    }
 
     const data = getGameData('geo');
     const nextIndex = this.levelIndex + 1;
@@ -505,6 +557,293 @@ export class GeoGame {
     });
   }
 
+  // ---------- Carrera con amiga ----------
+
+  get isHost() {
+    return this.race.role === 'host';
+  }
+
+  get myRole() {
+    return this.race.role;
+  }
+
+  get rivalRole() {
+    return this.isHost ? 'guest' : 'host';
+  }
+
+  createRival({ name, avatar, skin }) {
+    return { name, avatar, skin: resolveSkin(skin), target: null, shown: null, receivedAt: 0, live: false, gone: false };
+  }
+
+  startRaceSession() {
+    this.raceUnsubscribers = [onMessage((raw) => this.handleRaceMessage(raw)), onDisconnect(() => this.handleRivalLeft())];
+    this.resetRace();
+  }
+
+  /** Deja todo listo en la salida y avisa a la amiga; la anfitriona da la señal cuando las dos están listas. */
+  resetRace() {
+    clearTimeout(this.timer);
+    clearTimeout(this.resultTimer);
+    clearTimeout(this.podiumTimer);
+    this.resultTimer = null;
+    closeModal();
+    this.finishes = {};
+    this.result = null;
+    this.raceStartedAt = null;
+    this.raceAchievements = [];
+    this.posTimer = 0;
+    this.goLabelTime = 0;
+    this.attempts = 0;
+    Object.assign(this.rival, { target: null, shown: null, live: false });
+    this.newAttempt();
+    this.status = 'waiting';
+    this.music.stop();
+    this.hintTitle.textContent = `Esperando a ${this.rival.name}…`;
+    this.hintText.textContent = 'La carrera empieza sola con una cuenta atrás 3, 2, 1.';
+    this.hint.hidden = false;
+    this.loop.start();
+    send({ type: 'ready' });
+  }
+
+  handleRaceMessage(raw) {
+    const message = parseRaceMessage(raw);
+    if (!message) return;
+    switch (message.type) {
+      case 'pos':
+        Object.assign(this.rival, { target: message, receivedAt: performance.now(), live: true });
+        break;
+      case 'ready':
+        if (this.status !== 'waiting') return;
+        if (this.isHost) {
+          send({ type: 'go' });
+          this.startCountdown();
+        } else {
+          send({ type: 'ready' });
+        }
+        break;
+      case 'go':
+        if (!this.isHost && this.status === 'waiting') this.startCountdown();
+        break;
+      case 'finish':
+        this.finishes[this.rivalRole] = message.ms;
+        if (this.isHost) this.considerResult();
+        break;
+      case 'result':
+        if (!this.isHost) this.applyResult(message.winner);
+        break;
+      case 'rematch':
+        this.resetRace();
+        break;
+      default:
+        break;
+    }
+  }
+
+  startCountdown() {
+    this.status = 'countdown';
+    this.countdown = COUNTDOWN_SECONDS;
+    this.hint.hidden = true;
+    sounds.click();
+  }
+
+  updateCountdown(delta) {
+    const before = Math.ceil(this.countdown);
+    this.countdown -= delta;
+    if (this.countdown > 0) {
+      if (Math.ceil(this.countdown) !== before) sounds.click();
+      return;
+    }
+    // El tiempo de cada una se mide desde su propia salida: la demora de internet no cuenta.
+    this.status = 'running';
+    this.raceStartedAt = performance.now();
+    this.goLabelTime = GO_LABEL_SECONDS;
+    sounds.checkpoint();
+    this.music.start();
+  }
+
+  updateRace(delta) {
+    if (this.goLabelTime > 0) this.goLabelTime -= delta;
+    this.updateRival(delta);
+    if (!['running', 'dying', 'won'].includes(this.status)) return;
+    this.posTimer -= delta;
+    if (this.posTimer > 0) return;
+    this.posTimer = POS_SEND_SECONDS;
+    const { x, y, mode, gravityDir } = this.state;
+    send({ type: 'pos', x, y, mode, gravityDir, angle: this.angle, tilt: this.tilt, dead: this.status === 'dying' });
+  }
+
+  /** La rival llega unas 15 veces por segundo: se suaviza y se adelanta un poco para que no dé tirones. */
+  updateRival(delta) {
+    const rival = this.rival;
+    const target = rival.target;
+    if (!target) return;
+    const sinceUpdate = (performance.now() - rival.receivedAt) / 1000;
+    const ahead = rival.live && !target.dead ? Math.min(sinceUpdate, RIVAL_PREDICT_SECONDS) * this.level.speed : 0;
+    const goalX = target.x + ahead;
+    if (!rival.shown || Math.abs(goalX - rival.shown.x) > RIVAL_SNAP_DISTANCE) {
+      rival.shown = { x: goalX, y: target.y };
+      return;
+    }
+    const follow = Math.min(1, delta * RIVAL_FOLLOW_RATE);
+    rival.shown.x += (goalX - rival.shown.x) * follow;
+    rival.shown.y += (target.y - rival.shown.y) * follow;
+  }
+
+  rivalProgress() {
+    return this.rival.shown ? clamp(this.rival.shown.x / this.level.endX, 0, 1) : 0;
+  }
+
+  finishRace() {
+    const ms = performance.now() - this.raceStartedAt;
+    this.finishes[this.myRole] = ms;
+    this.wonAt = performance.now();
+    this.updateHud();
+    if (this.rival.gone) {
+      this.timer = setTimeout(() => this.showRaceAlone(), WIN_MODAL_DELAY_MS);
+      return;
+    }
+    send({ type: 'finish', ms });
+    if (this.result) {
+      this.podiumTimer = setTimeout(() => this.showPodium(), WIN_MODAL_DELAY_MS);
+      return;
+    }
+    this.showBanner(`🏁 ¡Meta! Esperando a ${this.rival.name}…`, 1500);
+    if (this.isHost) this.considerResult();
+  }
+
+  /** Solo la anfitriona decide quién ganó, para que las dos vean lo mismo. */
+  considerResult() {
+    if (this.result) return;
+    if (this.finishes.host !== undefined && this.finishes.guest !== undefined) {
+      this.decideResult();
+      return;
+    }
+    this.resultTimer ??= setTimeout(() => this.decideResult(), RESULT_GRACE_MS);
+  }
+
+  decideResult() {
+    clearTimeout(this.resultTimer);
+    this.resultTimer = null;
+    if (this.result || this.rival.gone) return;
+    const { host, guest } = this.finishes;
+    let winner = 'tie';
+    if (guest === undefined || host < guest) winner = 'host';
+    else if (host === undefined || guest < host) winner = 'guest';
+    send({ type: 'result', winner });
+    this.applyResult(winner);
+  }
+
+  applyResult(winner) {
+    if (this.result) return;
+    this.result = winner;
+    const iWon = winner === 'tie' || winner === this.myRole;
+    const data = getGameData('geo');
+    // Todas ganan: la carrera cuenta para las dos y la copa es para la ganadora.
+    updateGameData('geo', { racesPlayed: data.racesPlayed + 1, raceWins: data.raceWins + (iWon ? 1 : 0) });
+    this.raceAchievements = findNewAchievements(getGameData('geo'));
+    this.saveAchievements(this.raceAchievements);
+    if (this.status === 'won') {
+      const wait = Math.max(0, WIN_MODAL_DELAY_MS - (performance.now() - this.wonAt));
+      this.podiumTimer = setTimeout(() => this.showPodium(), wait);
+      return;
+    }
+    this.showBanner(`🏆 ¡${this.rival.name} llegó primero!`, LOSER_PODIUM_DELAY_MS);
+    this.podiumTimer = setTimeout(() => this.showPodium(), LOSER_PODIUM_DELAY_MS);
+  }
+
+  showPodium() {
+    // Si justo está explotando, se espera a que reaparezca.
+    if (this.status === 'dying') {
+      this.podiumTimer = setTimeout(() => this.showPodium(), RESPAWN_DELAY_MS);
+      return;
+    }
+    const finished = this.status === 'won';
+    if (!finished && this.status !== 'paused') {
+      this.pausedFrom = this.status;
+      this.status = 'paused';
+    }
+    this.loop.stop();
+    this.music.stop();
+    const tie = this.result === 'tie';
+    const iWon = tie || this.result === this.myRole;
+    const me = getActivePlayer();
+    let emoji = '🥈';
+    let title = `¡${this.rival.name} ganó!`;
+    if (tie) [emoji, title] = ['🤝', '¡Empate!'];
+    else if (iWon) [emoji, title] = ['🏆', '¡Ganaste la carrera!'];
+    const cheer = iWon ? '¡Ganaste una copa! 🏆' : '¡Qué buena carrera! La próxima puede ser tuya.';
+    showModal({
+      emoji,
+      title,
+      message: [cheer, this.achievementLines(this.raceAchievements)].filter(Boolean).join(' '),
+      tone: iWon ? 'success' : 'neutral',
+      stats: [
+        { label: `${me?.avatar ?? ''} Tú`, value: formatRaceTime(this.finishes[this.myRole]) },
+        { label: `${this.rival.avatar} ${this.rival.name}`, value: formatRaceTime(this.finishes[this.rivalRole]) },
+        { label: '🏆 Copas', value: getGameData('geo').raceWins },
+      ],
+      actions: [
+        this.rival.gone ? null : { label: '¡Revancha! 🔁', variant: 'primary', onClick: () => this.requestRematch() },
+        finished ? null : { label: 'Seguir hasta la meta', onClick: () => this.resume() },
+        { label: 'Salir', onClick: () => navigate('/geo') },
+      ].filter(Boolean),
+    });
+  }
+
+  requestRematch() {
+    if (this.rival.gone) {
+      this.showRivalGone();
+      return;
+    }
+    send({ type: 'rematch' });
+    this.resetRace();
+  }
+
+  handleRivalLeft() {
+    this.rival.gone = true;
+    clearTimeout(this.resultTimer);
+    this.resultTimer = null;
+    this.showBanner(`👋 ${this.rival.name} se fue`, 2200);
+    if (!this.raceStartedAt) {
+      this.showRivalGone();
+      return;
+    }
+    if (this.status === 'won' && !this.result) {
+      clearTimeout(this.timer);
+      this.showRaceAlone();
+    }
+  }
+
+  showRivalGone() {
+    this.status = 'paused';
+    this.loop.stop();
+    this.music.stop();
+    showModal({
+      emoji: '👋',
+      title: `${this.rival.name} se fue`,
+      message: 'Se cortó la conexión. Pueden crear otra sala cuando quieran.',
+      actions: [
+        { label: 'Nueva carrera 🏁', variant: 'primary', onClick: () => navigate(`/geo/carrera?nivel=${this.levelIndex}`) },
+        { label: 'Salir', onClick: () => navigate('/geo') },
+      ],
+    });
+  }
+
+  showRaceAlone() {
+    this.loop.stop();
+    showModal({
+      emoji: '🏁',
+      title: '¡Llegaste a la meta!',
+      message: `${this.rival.name} se desconectó, así que esta vez no hay copa.`,
+      tone: 'success',
+      stats: [{ label: 'Tiempo', value: formatRaceTime(this.finishes[this.myRole]) }],
+      actions: [
+        { label: 'Nueva carrera 🏁', variant: 'primary', onClick: () => navigate(`/geo/carrera?nivel=${this.levelIndex}`) },
+        { label: 'Salir', onClick: () => navigate('/geo') },
+      ],
+    });
+  }
+
   // ---------- Guardado ----------
 
   levelProgress() {
@@ -545,6 +884,13 @@ export class GeoGame {
 
   updateHud() {
     const percent = Math.floor(progressOf(this.state, this.level) * 100);
+    if (this.race) {
+      const myTime = this.finishes?.[this.myRole] ?? (this.raceStartedAt ? performance.now() - this.raceStartedAt : 0);
+      this.header.set('progress', `${percent}%`);
+      this.header.set('rival', `${Math.floor(this.rivalProgress() * 100)}%`);
+      this.header.set('time', `${Math.floor(myTime / 1000)} s`);
+      return;
+    }
     const coins = this.savedCoins.filter((saved, index) => saved || this.state.coins.has(index)).length;
     this.header.set('progress', `${percent}%`);
     this.header.set('attempts', this.attempts);
@@ -724,12 +1070,13 @@ export class GeoGame {
       palette: this.palette,
       time: this.time,
       used: this.state.used,
-      savedCoins: this.practice ? [] : this.savedCoins,
+      savedCoins: this.recordsProgress ? this.savedCoins : [],
       viewWidth: this.viewWidth,
     });
     drawFinish(ctx, this.level.endX, view, VIEW_HEIGHT);
     this.drawCheckpoints(view);
     this.drawAttemptLabel(view);
+    this.drawRival(view);
     this.drawRainbowTrail(view);
     if (this.status !== 'dying') this.drawPlayer(view);
     this.drawParticles(view);
@@ -737,6 +1084,7 @@ export class GeoGame {
     this.drawFlash();
     this.drawConfetti();
     this.drawProgress();
+    this.drawCountdown();
     ctx.restore();
   }
 
@@ -850,7 +1198,7 @@ export class GeoGame {
   }
 
   drawCheckpoints(view) {
-    if (!this.practice) return;
+    if (!this.useCheckpoints) return;
     const ctx = this.ctx;
     this.checkpoints.forEach((checkpoint) => {
       const x = checkpoint.x + PLAYER_SIZE / 2 - view.x;
@@ -871,6 +1219,8 @@ export class GeoGame {
   }
 
   drawAttemptLabel(view) {
+    // En carrera el cartel solo sale tras la cuenta atrás, para no taparla.
+    if (this.race && (this.attempts > 1 || !this.raceStartedAt)) return;
     const x = this.attemptStartX + 160 - view.x;
     if (x < -300) return;
     const ctx = this.ctx;
@@ -880,7 +1230,9 @@ export class GeoGame {
     ctx.lineWidth = 6;
     ctx.strokeStyle = 'rgba(43, 33, 64, 0.35)';
     ctx.fillStyle = '#ffffff';
-    const text = this.practice ? `Práctica · Intento ${this.attempts}` : `Intento ${this.attempts}`;
+    let text = `Intento ${this.attempts}`;
+    if (this.race) text = '🏁 ¡A correr!';
+    else if (this.practice) text = `Práctica · Intento ${this.attempts}`;
     ctx.strokeText(text, x, 150 + view.y);
     ctx.fillText(text, x, 150 + view.y);
   }
@@ -917,6 +1269,69 @@ export class GeoGame {
       time: this.time,
       flipped: this.state.gravityDir === -1,
     });
+  }
+
+  /** La amiga se ve como un fantasma semitransparente; si va fuera de la pantalla, una flecha en el borde. */
+  drawRival(view) {
+    if (!this.race) return;
+    const rival = this.rival;
+    if (!rival.shown || rival.gone || rival.target?.dead) return;
+    const ctx = this.ctx;
+    const x = rival.shown.x + PLAYER_SIZE / 2 - view.x;
+    const y = view.floor - (rival.shown.y + PLAYER_SIZE / 2 - view.y);
+    ctx.font = '700 15px Fredoka, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    if (x < -PLAYER_SIZE || x > this.viewWidth + PLAYER_SIZE) {
+      const isAhead = x > 0;
+      const edgeX = isAhead ? this.viewWidth - 44 : 44;
+      const edgeY = clamp(y, 60, FLOOR_Y - 20);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(edgeX - 36, edgeY - 16, 72, 32, 16);
+      ctx.fill();
+      ctx.fillStyle = this.palette.text;
+      ctx.textAlign = 'center';
+      ctx.fillText(isAhead ? `${rival.avatar} ▶` : `◀ ${rival.avatar}`, edgeX, edgeY + 1);
+      return;
+    }
+    const target = rival.target ?? { mode: 'cube', angle: 0, tilt: 0, gravityDir: 1 };
+    ctx.save();
+    ctx.globalAlpha = RIVAL_ALPHA;
+    drawPlayer(ctx, rival.skin, {
+      x,
+      y,
+      size: PLAYER_SIZE,
+      mode: target.mode,
+      angle: target.angle,
+      tilt: target.tilt,
+      time: this.time,
+      flipped: target.gravityDir === -1,
+    });
+    ctx.restore();
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(43, 33, 64, 0.45)';
+    ctx.fillStyle = '#ffffff';
+    const label = `${rival.avatar} ${rival.name}`;
+    ctx.strokeText(label, x, y - PLAYER_SIZE);
+    ctx.fillText(label, x, y - PLAYER_SIZE);
+  }
+
+  drawCountdown() {
+    if (!this.race) return;
+    let text = null;
+    if (this.status === 'countdown' || (this.status === 'paused' && this.pausedFrom === 'countdown')) text = String(Math.max(1, Math.ceil(this.countdown)));
+    else if (this.goLabelTime > 0) text = '¡YA!';
+    if (!text) return;
+    const ctx = this.ctx;
+    ctx.font = '700 110px Fredoka, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = 'rgba(43, 33, 64, 0.4)';
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeText(text, this.viewWidth / 2, VIEW_HEIGHT / 2 - 20);
+    ctx.fillText(text, this.viewWidth / 2, VIEW_HEIGHT / 2 - 20);
   }
 
   drawParticles(view) {
@@ -1026,10 +1441,35 @@ export class GeoGame {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = this.palette.text;
     ctx.fillText(`${Math.floor(progress * 100)}%`, trackX + trackWidth + 10, trackY + 7);
+    if (this.race) {
+      this.drawTrackMarker(trackX + trackWidth * this.rivalProgress(), trackY + 6, this.rival.avatar, this.rival.skin.color.primary);
+      this.drawTrackMarker(trackX + trackWidth * progress, trackY + 6, getActivePlayer()?.avatar ?? '⭐', this.skin.color.primary);
+    }
+  }
+
+  drawTrackMarker(x, y, emoji, color) {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = '15px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(emoji, x, y + 1);
   }
 
   destroy() {
     clearTimeout(this.timer);
+    if (this.race) {
+      clearTimeout(this.resultTimer);
+      clearTimeout(this.podiumTimer);
+      this.raceUnsubscribers.forEach((unsubscribe) => unsubscribe());
+      leaveRoom();
+    }
     this.music.stop();
     this.flushTotals();
     closeModal();

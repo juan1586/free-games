@@ -18,6 +18,8 @@ const createDefaultGames = () => ({
     totalAttempts: 0,
     totalJumps: 0,
     skinChanges: 0,
+    racesPlayed: 0,
+    raceWins: 0,
   },
 });
 
