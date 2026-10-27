@@ -70,6 +70,10 @@ export const sounds = {
   oink: () => playMelody([[520, 0, 0.06], [420, 0.08, 0.08]], 'square'),
   zip: () => playTone({ frequency: 1400, endFrequency: 700, duration: 0.5, type: 'sine', volume: 0.05 }),
   frog: () => playMelody([[300, 0, 0.06], [220, 0.09, 0.08]], 'square'),
+  whack: () => playTone({ frequency: 260, endFrequency: 120, duration: 0.12, type: 'square', volume: 0.12 }),
+  crunch: () => playMelody([[700, 0, 0.05], [520, 0.05, 0.05], [880, 0.1, 0.05], [1175, 0.16, 0.2]], 'square'),
+  stack: () => playTone({ frequency: 330, endFrequency: 520, duration: 0.12, type: 'triangle', volume: 0.12 }),
+  chime: () => playMelody([[1568, 0, 0.08], [2093, 0.07, 0.2]], 'triangle'),
   /** Cada guacamaya del coro canta su nota (0 a 3). */
   macaw: (index) => {
     const frequency = [523, 659, 784, 1047][index] ?? 523;

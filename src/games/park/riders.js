@@ -61,6 +61,37 @@ export function createMateRider(kit, random, mate, options = {}) {
 }
 
 /**
+ * Una amiga de pie (en las atracciones con escena propia), con su ropa, su nombre y su burbuja.
+ * Devuelve { id, root, say(text), update(delta, pose) }; mientras habla, salta con los brazos arriba.
+ */
+export function createStandingMate(kit, mate) {
+  const avatar = createAvatar(kit, mate.look);
+  const label = kit.label(`${mate.emoji} ${mate.name}`, { height: 0.4 });
+  label.sprite.position.y = 2.8;
+  const bubble = kit.label(' ', { bubble: true, height: 0.5, background: '#fff6c9' });
+  bubble.sprite.position.y = 3.4;
+  bubble.sprite.visible = false;
+  avatar.root.add(label.sprite, bubble.sprite);
+  let timer = 0;
+  return {
+    id: mate.id,
+    root: avatar.root,
+    say(text) {
+      bubble.setText(text);
+      bubble.sprite.visible = true;
+      timer = 1.3;
+    },
+    update(delta, pose = {}) {
+      avatar.update(delta, { ...pose, airborne: timer > 0 || pose.airborne });
+      if (timer > 0) {
+        timer -= delta;
+        if (timer <= 0) bubble.sprite.visible = false;
+      }
+    },
+  };
+}
+
+/**
  * Lo que hace una amiga sentada cuando dice algo dentro de la atracción: burbuja y, si grita,
  * brazos arriba un momento.
  */

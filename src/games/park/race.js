@@ -45,6 +45,9 @@ export const SAYINGS = {
   butterfly: { text: '🦋 ¡Una mariposa!' },
   fruit: { text: '🍌 ¡Una fruta!' },
   song: { text: '🎶 ¡La canté!' },
+  ring: { text: '🍭 ¡Un aro!' },
+  candy: { text: '🍬 ¡Dulces!' },
+  cake: { text: '🎂 ¡Qué pastel!' },
 };
 export const EMOTES = Object.keys(SAYINGS).filter((kind) => SAYINGS[kind].emote);
 

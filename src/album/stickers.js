@@ -10,7 +10,7 @@ import { DINOS, isDinoUnlocked } from '../games/dino/dinos.js';
 import { GEO_LEVELS, GEO_WORLDS } from '../games/geo/levels.js';
 import { ACHIEVEMENTS, countStars as countGeoStars } from '../games/geo/achievements.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
-import { ALL_RIDES, GOLDEN_BEANS, GOLDEN_EGGS, GOLDEN_FROGS, GOLDEN_SHELLS, PANACA_RIDES, PARK_WORLDS, PLAYA_RIDES, RIDES, SELVA_RIDES, isWorldOpen } from '../games/park/worlds.js';
+import { ALL_RIDES, DULCES_RIDES, GOLDEN_BEANS, GOLDEN_CANDIES, GOLDEN_EGGS, GOLDEN_FROGS, GOLDEN_SHELLS, PANACA_RIDES, PARK_WORLDS, PLAYA_RIDES, RIDES, SELVA_RIDES, isWorldOpen } from '../games/park/worlds.js';
 
 export const STICKER_GROUPS = [
   { id: 'dino', title: '🦖 Dino Corre', color: '#4dd4ac' },
@@ -96,6 +96,13 @@ export const STICKERS = [
   ),
   sticker('park', 'park-frogs-all', '🐸', 'Todas las ranas', 'Encuentra todas las ranas doradas', ({ park }) =>
     park.goldenFrogs.length >= GOLDEN_FROGS.length,
+  ),
+  sticker('park', 'park-dulces', '🍭', 'Golosa', 'Abre el Castillo de Dulces', ({ park }) => isWorldOpen(PARK_WORLDS[4], park)),
+  sticker('park', 'park-dulces-all', '🎠', 'Todo el castillo', 'Monta en todas las atracciones del Castillo de Dulces', ({ park }) =>
+    DULCES_RIDES.every((ride) => (park.ridesDone[ride.id] ?? 0) >= 1),
+  ),
+  sticker('park', 'park-candies-all', '🍬', 'Todos los caramelos', 'Encuentra todos los caramelos dorados', ({ park }) =>
+    park.goldenCandies.length >= GOLDEN_CANDIES.length,
   ),
   sticker('park', 'park-missions', '📋', 'Misionera', 'Cumple 10 misiones del parque', ({ park }) => park.missionsDone >= 10),
   sticker('park', 'park-friends', '👭', 'Parque con amigas', 'Entra al parque con amigas', ({ park }) => park.friendVisits >= 1),

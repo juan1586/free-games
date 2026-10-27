@@ -160,8 +160,42 @@ export const SELVA_RIDES = [
   },
 ];
 
+/** Atracciones del Castillo de Dulces. */
+export const DULCES_RIDES = [
+  {
+    id: 'carrusel',
+    name: 'Carrusel de Caramelo',
+    emoji: '🎠',
+    description: 'Monta en un unicornio y atrapa los aros de caramelo al pasar.',
+    entrance: { x: 24, z: -18 },
+    queueDir: { x: -0.8, z: 0.6 },
+    fastPassPrice: 10,
+    secondsPerPerson: 2.2,
+  },
+  {
+    id: 'pasteles',
+    name: 'Torre de Pasteles',
+    emoji: '🎂',
+    description: 'Suelta las capas de pastel justo encima y arma la torta más alta.',
+    entrance: { x: -24, z: -18 },
+    queueDir: { x: 0.8, z: 0.6 },
+    fastPassPrice: 10,
+    secondsPerPerson: 2.4,
+  },
+  {
+    id: 'pinata',
+    name: 'La Piñata Gigante',
+    emoji: '🪅',
+    description: 'Dale a la piñata cuando pase por el centro y recoge los dulces.',
+    entrance: { x: 0, z: -30 },
+    queueDir: { x: 0, z: 1 },
+    fastPassPrice: 12,
+    secondsPerPerson: 2.4,
+  },
+];
+
 /** Todas las atracciones de todos los parques (los ids no se repiten). */
-export const ALL_RIDES = [...RIDES, ...PANACA_RIDES, ...PLAYA_RIDES, ...SELVA_RIDES];
+export const ALL_RIDES = [...RIDES, ...PANACA_RIDES, ...PLAYA_RIDES, ...SELVA_RIDES, ...DULCES_RIDES];
 
 export const getRide = (id) => ALL_RIDES.find((ride) => ride.id === id);
 
@@ -215,6 +249,18 @@ export const GOLDEN_FROGS = [
   { id: 'frog-8', x: -49, y: 1.2, z: -30, hint: 'En la punta del embarcadero' },
 ];
 
+/** Caramelos dorados escondidos en el Castillo de Dulces. */
+export const GOLDEN_CANDIES = [
+  { id: 'candy-1', x: 17, y: 7.9, z: -50, hint: 'En la torre del castillo (sube por la muralla)' },
+  { id: 'candy-2', x: 0, y: 0.9, z: -5.6, hint: 'Detrás del cupcake gigante' },
+  { id: 'candy-3', x: -40, y: 1.2, z: 10, hint: 'En la isla del lago de chocolate (¡salta por las galletas!)' },
+  { id: 'candy-4', x: 43, y: 4.9, z: 28.6, hint: 'Sobre la nube de algodón (¡salta por las gomitas!)' },
+  { id: 'candy-5', x: -42, y: 4.5, z: -34, hint: 'En lo alto del pastel gigante (¡trepa sus pisos!)' },
+  { id: 'candy-6', x: 39, y: 0.9, z: -32, hint: 'Detrás del carrusel' },
+  { id: 'candy-7', x: -32, y: 0.9, z: 38.4, hint: 'Detrás de una casita de jengibre' },
+  { id: 'candy-8', x: -18, y: 4.9, z: -50, hint: 'En la punta oeste de la muralla' },
+];
+
 /**
  * Parques. `treasure`: lo que se colecciona en cada uno (`key` es el campo de `park` donde se guarda).
  * `unlock`: qué hay que hacer para abrirlo (sin `unlock`, abierto desde el principio).
@@ -264,15 +310,25 @@ export const PARK_WORLDS = [
       check: (data) => PLAYA_RIDES.every((ride) => (data.ridesDone[ride.id] ?? 0) >= 1),
     },
   },
+  {
+    id: 'dulces',
+    name: 'Castillo de Dulces',
+    emoji: '🍭',
+    description: 'Un castillo de galleta, un lago de chocolate, gomitas gigantes y un carrusel.',
+    rides: DULCES_RIDES,
+    treasure: { key: 'goldenCandies', name: 'Caramelos dorados', short: 'Caramelos', icon: '🍬', item: 'caramelo dorado', items: GOLDEN_CANDIES },
+    unlock: {
+      hint: 'Monta en todas las atracciones de la Selva Amazónica',
+      check: (data) => SELVA_RIDES.every((ride) => (data.ridesDone[ride.id] ?? 0) >= 1),
+    },
+  },
 ];
 
 export const isWorldOpen = (world, data) => !world.unlock || world.unlock.check(data);
 export const getWorldOfRide = (rideId) => PARK_WORLDS.find((world) => world.rides.some((ride) => ride.id === rideId));
 
 /** Mundos que vendrán (se muestran como «próximamente» en la pantalla previa). */
-export const UPCOMING_WORLDS = [
-  { id: 'dulces', name: 'Castillo de Dulces', emoji: '🍭' },
-];
+export const UPCOMING_WORLDS = [];
 
 /** Monedas de bienvenida la primera vez que se entra al parque. */
 export const WELCOME_COINS = 30;

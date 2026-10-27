@@ -21,7 +21,7 @@ export const MISSION_POOL = [
   mission('snitch', '🚨', 'Avísale al vigilante de alguien que se cuela', 'snitch', 1),
   mission('jumps-30', '🦘', 'Salta 30 veces', 'jump', 30),
   mission('queue-2', '⏳', 'Haz la fila completa 2 veces', 'queue', 2),
-  mission('bean', '🌟', 'Encuentra un tesoro dorado (grano o huevo)', 'bean', 1, (data) =>
+  mission('bean', '🌟', 'Encuentra un tesoro dorado escondido', 'bean', 1, (data) =>
     PARK_WORLDS.some((world) => isWorldOpen(world, data) && (data[world.treasure.key] ?? []).length < world.treasure.items.length),
   ),
   // Solo atracciones de parques que ya están abiertos.

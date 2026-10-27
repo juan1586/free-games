@@ -96,6 +96,12 @@ const MUSIC = {
     melody: 'D5 E5 G5 - A5 G5 E5 - D5 E5 G5 A5 B5 - A5 - G5 A5 B5 D6 B5 A5 G5 - E5 G5 A5 G5 E5 D5 - -',
     bass: 'D3 D3 A2 D3 G2 G3 D3 D3 D3 D3 A2 D3 E3 A2 D3 D3',
   },
+  // Caja de música en vals para el castillo.
+  dulces: {
+    bpm: 116,
+    melody: 'E5 G5 C6 G5 C6 - D5 F5 B5 F5 B5 - C5 E5 A5 E5 A5 - D5 G5 B5 A5 G5 F5 E5 - E5 D5 C5 - - -',
+    bass: 'C3 G3 G3 C3 G3 G3 A2 E3 E3 F2 C3 C3 G2 D3 C3 C3',
+  },
   panaca: {
     bpm: 138,
     melody: 'G4 G4 C5 C5 E5 E5 C5 - D5 D5 B4 B4 G4 - - - G4 G4 C5 C5 E5 E5 G5 - F5 E5 D5 B4 C5 - - -',
