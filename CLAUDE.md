@@ -49,13 +49,21 @@ scripts/           check-geo-levels.mjs
 - Estadísticas (`core/analytics.js`, GoatCounter, solo en producción): el router cuenta cada pantalla con `trackPage`; los hitos se cuentan con `trackEvent`. **Nunca enviar nombres de jugador, códigos de sala ni otros datos personales**, solo rutas y nombres de evento fijos. Para distinguir jugadores se envía su `statsId` (número al azar de 4 cifras, visible en «Editar jugador») como referrer `jugador-NNNN`.
 - Turbo: en Dino y Salto Geométrico, mantener `Shift` o el botón ⚡.
 
+## Dino Corre (detalles)
+
+- Mundos en `worlds.js`: los 5 primeros son para principiantes y no se tocan; del 6 al 10 (`expert: true`) son más difíciles. Campos opcionales por mundo: `gap` (segundos entre obstáculos), `flyerChance`, `doubleChance` (dos obstáculos seguidos), `specials` (`{ kinds, chance }`), `chase` (ola de lava), `noClouds`.
+- Premios: tienda en `accessories.js` (`HATS`, `DINO_TRAILS`, comprados en `dino.owned`, puestos en `dino.hat` / `dino.trail`); medallas por mundo en `dino.medals` (`MEDALS`, `medalsForRun`, `savedMedals`, que da bronce a los mundos ya superados); dinos secretos con `unlockWorld` (`isDinoUnlocked`). Ayudas en la pista (`POWER_UPS` en `DinoGame.js`): salen de la semilla del recorrido, así que en carrera son iguales para todos.
+- Obstáculos que se mueven: `OBSTACLE_MOTIONS` (`bob`, `bounce`, `fall`). El movimiento depende de lo recorrido (`travel`), no del tiempo, para que en carrera sea igual para todos. `pit` es un hueco: solo choca si el dino pisa el suelo encima.
+
 ## Salto Geométrico (detalles importantes)
 
 - `physics.js` no toca el DOM: lo usan el juego y el bot de verificación. Paso fijo de 1/240 s; unidades en px con Y hacia arriba y el suelo en y = 0.
-- Los niveles se escriben en `levels.js` encadenando **secciones** (`spikes`, `ledge`, `padToPlatform`, `rocketGates`, `ballFlips`, `planeGates`…). Las posiciones están en celdas de 40 px. Cada nivel tiene 3 monedas (`coinAt`).
+- Los niveles se escriben en `levels.js` encadenando **secciones** (`spikes`, `ledge`, `padToPlatform`, `rocketGates`, `ballFlips`, `planeGates`, `magnetFlips`, `waveGates`…). Las posiciones están en celdas de 40 px. Cada nivel tiene 3 monedas (`coinAt`). `onCeiling(sección)` cuelga cualquier sección del techo (para la gravedad al revés).
+- Modos: `cube`, `rocket`, `ball`, `plane`, `magnet` (pulsar = salta al lado contrario) y `wave` (mantener = sube en diagonal). Portales especiales (`SPECIAL_PORTALS` en `physics.js`): `flipUp`/`flipDown` (gravedad del cubo) y `fast`/`normalSpeed` (`state.speedFactor`). Aro azul: `gravityOrb`.
+- Mundos 6-8 (`expert: true`) son para expertos; los 5 primeros se dejan como están, para principiantes.
 - Velocidades elegibles (`SPEEDS`: 🐢 ×0.85, 🐇 ×1, ⚡ ×1.2) y turbo (`TURBO_FACTOR` ×1.25).
 - **Cualquier cambio en niveles, física o velocidades ⇒ ejecutar `npm run check:levels`.** Comprueba cada nivel en las 3 velocidades, con y sin turbo, con decisiones cada 100 ms, y que todas las monedas son alcanzables. Tarda unos 3 minutos; `npm run check:levels -- 2-3` comprueba solo un nivel.
-- Progreso: `unlockedLevel` (índice lineal 0..14). Solo desbloquea el modo normal (a cualquier velocidad). Estrellas = niveles completados + monedas + 2 por reto. Desbloquean apariencias (`shapes.js`).
+- Progreso: `unlockedLevel` (índice lineal 0..23). Los niveles nuevos se añaden al final; quien ya terminó el último que había lo encuentra abierto (`unlockAddedLevels` en `setup.js`). Solo desbloquea el modo normal (a cualquier velocidad). Estrellas = niveles completados + monedas + 2 por reto. Desbloquean apariencias (`shapes.js`).
 
 ## Modo carrera (Dino y Salto Geométrico, de 2 a 4 jugadores, cada uno en su dispositivo)
 

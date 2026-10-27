@@ -128,6 +128,99 @@
   background: linear-gradient(160deg, #1b1446, #5a3fa8);
   color: var(--c-white);
 }
+.world--sea {
+  background: linear-gradient(160deg, #0b4f8a, #35c6d9);
+  color: var(--c-white);
+}
+.world--candy {
+  background: linear-gradient(160deg, #ff9ed2, #fff0b3);
+}
+.world--clouds {
+  background: linear-gradient(160deg, #8fd3ff, #ffe1f4);
+}
+.world--castle {
+  background: linear-gradient(160deg, #1d1240, #6b3fa8);
+  color: var(--c-white);
+}
+.world--escape {
+  background: linear-gradient(160deg, #5a1530, #ff7a3d);
+  color: var(--c-white);
+}
+
+.dino-option.is-locked {
+  cursor: not-allowed;
+  filter: grayscale(0.7);
+}
+
+.world-option__medals {
+  display: flex;
+  gap: 2px;
+  font-size: 1.05rem;
+}
+.world-option__medals span {
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+.world-option__medals span.is-earned {
+  filter: none;
+  opacity: 1;
+}
+
+.shop__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.shop-item {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border: 4px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--c-white);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s var(--ease-bounce), border-color 0.2s;
+}
+.shop-item:not(:disabled):hover {
+  transform: translateY(-3px);
+}
+.shop-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.shop-item.is-owned {
+  background: #f3fff9;
+}
+.shop-item.is-selected {
+  border-color: var(--c-purple);
+}
+.shop-item__icon {
+  font-size: 2rem;
+}
+.shop-item strong {
+  font-size: 0.9rem;
+}
+.shop-item__price {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.world-group__title {
+  margin: 14px 0 8px;
+  font-size: 1.05rem;
+}
+.world-group__title--expert {
+  color: #e0475c;
+}
 
 .tetris-world-grid {
   display: grid;
@@ -519,6 +612,18 @@
 .geo-world--rainbow {
   --world-bg: linear-gradient(160deg, #b57bff, #ffd6e8);
   --world-text: var(--c-ink);
+}
+.geo-world--galaxy {
+  --world-bg: linear-gradient(160deg, #2a0f5c, #ff6fb5);
+  --world-text: var(--c-white);
+}
+.geo-world--magnet {
+  --world-bg: linear-gradient(160deg, #0f3d3e, #4dd4ac);
+  --world-text: var(--c-white);
+}
+.geo-world--disco {
+  --world-bg: linear-gradient(160deg, #140a2e, #5a1fa8 60%, #ff5fd2);
+  --world-text: var(--c-white);
 }
 
 .setup__header .star-pill {

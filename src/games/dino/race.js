@@ -3,7 +3,8 @@
  * Todo lo que llega de otra tablet se valida aquí antes de usarse.
  */
 import { getGameData, sanitizeName } from '../../core/player.js';
-import { DINOS } from './dinos.js';
+import { DINOS, getDino, isDinoUnlocked } from './dinos.js';
+import { HATS, getHat, isOwned } from './accessories.js';
 import { DINO_WORLDS } from './worlds.js';
 
 export const RACE_GAME = 'dino';
@@ -28,13 +29,20 @@ export const dinoRaceRoute = ({ worldIndex }) => `/dino/jugar?mundo=${worldIndex
 
 export function dinoLook() {
   const data = getGameData('dino');
-  return { dinoType: data.dinoType, dinoName: data.dinoName };
+  const dino = getDino(data.dinoType);
+  const hat = getHat(data.hat);
+  return {
+    dinoType: isDinoUnlocked(dino, data) ? dino.id : DINOS[0].id,
+    dinoName: data.dinoName,
+    hat: isOwned(data, hat) ? hat.id : 'none',
+  };
 }
 
 export function parseDinoLook(look) {
   return {
     dinoType: DINOS.some((dino) => dino.id === look.dinoType) ? look.dinoType : DINOS[0].id,
     dinoName: sanitizeName(look.dinoName),
+    hat: HATS.some((hat) => hat.id === look.hat) ? look.hat : 'none',
   };
 }
 

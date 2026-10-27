@@ -8,6 +8,7 @@ const completedLevels = (data) => GEO_LEVELS.filter((level) => levelProgress(dat
 const countCoins = (data) =>
   GEO_LEVELS.reduce((total, level) => total + (levelProgress(data, level).coins ?? []).filter(Boolean).length, 0);
 const completedWithMode = (data, mode) => completedLevels(data).some((level) => level.modes.includes(mode));
+const completedWithPortal = (data, portal) => completedLevels(data).some((level) => level.portals.has(portal));
 
 /**
  * Retos. `check(data, context)` decide si ya se cumplió; context trae datos del intento
@@ -49,6 +50,24 @@ export const ACHIEVEMENTS = [
   { id: 'stylist', icon: '🎨', title: 'A la moda', description: 'Cambia tu apariencia 3 veces.', check: (data) => data.skinChanges >= 3 },
   { id: 'jumper', icon: '🦘', title: 'Saltos sin parar', description: 'Salta 500 veces.', check: (data) => data.totalJumps >= 500 },
   { id: 'persistent', icon: '💪', title: 'Nunca me rindo', description: 'Haz 100 intentos.', check: (data) => data.totalAttempts >= 100 },
+  { id: 'gravity', icon: '🙃', title: 'Patas arriba', description: 'Termina un nivel con la gravedad al revés.', check: (data) => completedWithPortal(data, 'flipUp') },
+  { id: 'magnet', icon: '🧲', title: 'Superimán', description: 'Termina un nivel con el imán.', check: (data) => completedWithMode(data, 'magnet') },
+  { id: 'wave', icon: '〰️', title: 'Onda expansiva', description: 'Termina un nivel con la onda.', check: (data) => completedWithMode(data, 'wave') },
+  { id: 'supersonic', icon: '⏩', title: 'Supersónica', description: 'Termina un nivel con portal rápido.', check: (data) => completedWithPortal(data, 'fast') },
+  {
+    id: 'flawless',
+    icon: '💎',
+    title: 'Sin un rasguño',
+    description: 'Termina un nivel de experto al primer intento.',
+    check: (data, context) => Boolean(context.won && !context.practice && context.expert && context.attempts === 1),
+  },
+  {
+    id: 'boss',
+    icon: '👑',
+    title: 'Vencí al jefe',
+    description: 'Termina «El Gran Jefe».',
+    check: (data) => completedLevels(data).some((level) => level.boss),
+  },
   { id: 'first-race', icon: '🏁', title: 'Primera carrera', description: 'Corre una carrera con amigos.', check: (data) => data.racesPlayed >= 1 },
   { id: 'race-win', icon: '🏆', title: 'Primera copa', description: 'Gana una carrera con amigos.', check: (data) => data.raceWins >= 1 },
   { id: 'race-wins-3', icon: '🥇', title: 'Tres copas', description: 'Gana 3 carreras con amigos.', check: (data) => data.raceWins >= 3 },
@@ -56,14 +75,14 @@ export const ACHIEVEMENTS = [
     id: 'all-levels',
     icon: '🌈',
     title: 'Corona arcoíris',
-    description: 'Termina los 15 niveles.',
+    description: `Termina los ${GEO_LEVELS.length} niveles.`,
     check: (data) => completedLevels(data).length === GEO_LEVELS.length,
   },
   {
     id: 'all-coins',
     icon: '👑',
     title: 'Tesoro completo',
-    description: 'Consigue las 45 monedas.',
+    description: `Consigue las ${GEO_LEVELS.length * 3} monedas.`,
     check: (data) => countCoins(data) === GEO_LEVELS.length * 3,
   },
 ];

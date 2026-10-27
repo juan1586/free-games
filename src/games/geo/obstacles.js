@@ -10,6 +10,12 @@ export const PORTAL_STYLES = {
   rocket: { color: '#ff5fa2', icon: '🚀', label: 'Cohete' },
   ball: { color: '#ff9f43', icon: '🔵', label: 'Pelota' },
   plane: { color: '#5ab0ff', icon: '✈️', label: 'Avión' },
+  magnet: { color: '#ff5f5f', icon: '🧲', label: 'Imán' },
+  wave: { color: '#ff5fd2', icon: '〰️', label: 'Onda' },
+  flipUp: { color: '#b57bff', icon: '🙃', label: 'Patas arriba' },
+  flipDown: { color: '#4dd4ac', icon: '🙂', label: 'Al derecho' },
+  fast: { color: '#ff9f43', icon: '⏩', label: 'Más rápido', fast: true },
+  normalSpeed: { color: '#5ab0ff', icon: '▶️', label: 'Velocidad normal', fast: true },
 };
 
 const GOLD = '#ffd93d';
@@ -113,12 +119,13 @@ function drawOrb(ctx, orb, view, time, isUsed) {
   const x = toScreenX(view, orb.cx);
   const y = toScreenY(view, orb.cy);
   const pulse = isUsed ? 0 : Math.sin(time * 6) * 3;
+  const isGravity = orb.kind === 'gravity';
   ctx.globalAlpha = isUsed ? 0.35 : 1;
-  ctx.fillStyle = 'rgba(255, 217, 61, 0.3)';
+  ctx.fillStyle = isGravity ? 'rgba(90, 176, 255, 0.35)' : 'rgba(255, 217, 61, 0.3)';
   ctx.beginPath();
   ctx.arc(x, y, 22 + pulse, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = GOLD;
+  ctx.strokeStyle = isGravity ? '#5ab0ff' : GOLD;
   ctx.lineWidth = 5;
   ctx.beginPath();
   ctx.arc(x, y, 14, 0, Math.PI * 2);
@@ -149,6 +156,17 @@ function drawPortal(ctx, portal, view, time) {
   ctx.beginPath();
   ctx.ellipse(x, y, 16, 64 + wobble, 0, 0, Math.PI * 2);
   ctx.stroke();
+  // Los portales de velocidad llevan flechas dentro.
+  if (style.fast) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    [-22, 0, 22].forEach((dy) => {
+      ctx.beginPath();
+      ctx.moveTo(x - 6, y + dy - 8);
+      ctx.lineTo(x + 7, y + dy);
+      ctx.lineTo(x - 6, y + dy + 8);
+      ctx.fill();
+    });
+  }
   ctx.font = '22px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

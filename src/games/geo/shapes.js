@@ -10,6 +10,10 @@ export const SHAPES = [
   { id: 'star', name: 'Estrella', stars: 12 },
   { id: 'heart', name: 'Corazón', stars: 18 },
   { id: 'robot', name: 'Robot', stars: 26 },
+  { id: 'dino', name: 'Dino', stars: 40 },
+  { id: 'ufo', name: 'Platillo', stars: 55 },
+  { id: 'octopus', name: 'Pulpo', stars: 70 },
+  { id: 'unicorn', name: 'Unicornio', stars: 90 },
 ];
 
 export const COLORS = [
@@ -21,6 +25,10 @@ export const COLORS = [
   { id: 'tangerine', name: 'Mandarina', primary: '#ff9f43', secondary: '#7b5cff', stars: 14 },
   { id: 'cherry', name: 'Cereza', primary: '#ff5f5f', secondary: '#4dd4ac', stars: 20 },
   { id: 'midnight', name: 'Medianoche', primary: '#2b2140', secondary: '#7cffb2', stars: 30 },
+  { id: 'cotton', name: 'Algodón', primary: '#ffb3d9', secondary: '#8fd3ff', stars: 42 },
+  { id: 'galaxy', name: 'Galaxia', primary: '#3a1f8a', secondary: '#ff6fb5', stars: 50 },
+  { id: 'lime', name: 'Lima', primary: '#7be08f', secondary: '#ff5fa2', stars: 62 },
+  { id: 'gold', name: 'Oro', primary: '#ffc21a', secondary: '#fff3c4', stars: 80 },
 ];
 
 export const TRAILS = [
@@ -29,6 +37,9 @@ export const TRAILS = [
   { id: 'bubbles', name: 'Burbujas', icon: '🫧', stars: 10 },
   { id: 'hearts', name: 'Corazones', icon: '💖', stars: 16 },
   { id: 'rainbow', name: 'Arcoíris', icon: '🌈', stars: 24 },
+  { id: 'shooting', name: 'Estrellas', icon: '🌠', stars: 45 },
+  { id: 'notes', name: 'Música', icon: '🎵', stars: 60 },
+  { id: 'fire', name: 'Fuego', icon: '🔥', stars: 75 },
 ];
 
 export const FACES = [
@@ -36,6 +47,8 @@ export const FACES = [
   { id: 'wink', name: 'Guiño', icon: '😉', stars: 3 },
   { id: 'surprised', name: 'Sorpresa', icon: '😮', stars: 8 },
   { id: 'cool', name: 'Gafas', icon: '😎', stars: 13 },
+  { id: 'tongue', name: 'Lengua', icon: '😛', stars: 35 },
+  { id: 'starry', name: 'Asombro', icon: '🤩', stars: 58 },
 ];
 
 export const SKIN_GROUPS = [
@@ -122,6 +135,45 @@ const SHAPE_PATHS = {
     ctx.beginPath();
     ctx.roundRect(-h, -h * 0.8, h * 2, h * 1.8, h * 0.2);
   },
+  dino: (ctx, h) => {
+    polygonPath(ctx, [
+      [-h, h],
+      [-h, -h * 0.3],
+      [-h * 0.75, -h * 0.6],
+      [-h * 0.55, -h * 1.05],
+      [-h * 0.3, -h * 0.7],
+      [-h * 0.05, -h * 1.15],
+      [h * 0.2, -h * 0.75],
+      [h * 0.45, -h * 1.05],
+      [h * 0.62, -h * 0.68],
+      [h, -h * 0.35],
+      [h, h],
+    ]);
+  },
+  ufo: (ctx, h) => {
+    ctx.beginPath();
+    ctx.ellipse(0, h * 0.3, h * 1.15, h * 0.55, 0, 0, Math.PI * 2);
+    ctx.moveTo(h * 0.7, h * 0.05);
+    ctx.arc(0, h * 0.05, h * 0.7, 0, Math.PI, true);
+    ctx.closePath();
+  },
+  octopus: (ctx, h) => {
+    ctx.beginPath();
+    ctx.arc(0, -h * 0.1, h * 0.95, Math.PI, 0);
+    ctx.lineTo(h * 0.95, h * 0.75);
+    for (let leg = 0; leg < 4; leg += 1) {
+      const right = h * 0.95 - leg * h * 0.475;
+      ctx.quadraticCurveTo(right - h * 0.12, h * 1.15, right - h * 0.24, h * 0.75);
+      ctx.quadraticCurveTo(right - h * 0.36, h * 0.45, right - h * 0.475, h * 0.75);
+    }
+    ctx.closePath();
+  },
+  unicorn: (ctx, h) => {
+    ctx.beginPath();
+    ctx.arc(0, h * 0.1, h * 0.92, -Math.PI / 2 + 0.32, Math.PI * 1.5 - 0.32);
+    ctx.lineTo(0, -h * 1.5);
+    ctx.closePath();
+  },
 };
 
 function drawFace(ctx, faceId, h) {
@@ -150,6 +202,16 @@ function drawFace(ctx, faceId, h) {
       ctx.arc(eyeX + h * 0.05, eyeY, h * 0.1, 0, Math.PI * 2);
       ctx.fill();
     });
+  } else if (faceId === 'starry') {
+    ctx.fillStyle = '#ffc21a';
+    [leftX, rightX].forEach((eyeX) => {
+      ctx.save();
+      ctx.translate(eyeX, eyeY);
+      starPath(ctx, h * 0.2, h * 0.09);
+      ctx.fill();
+      ctx.restore();
+    });
+    ctx.fillStyle = INK;
   } else {
     ctx.beginPath();
     ctx.arc(rightX, eyeY, h * 0.12, 0, Math.PI * 2);
@@ -171,6 +233,13 @@ function drawFace(ctx, faceId, h) {
   else ctx.arc(h * 0.08, h * 0.2, h * 0.24, Math.PI * 0.15, Math.PI * 0.85);
   if (faceId === 'surprised') ctx.fill();
   else ctx.stroke();
+
+  if (faceId === 'tongue') {
+    ctx.fillStyle = '#ff5f8f';
+    ctx.beginPath();
+    ctx.ellipse(h * 0.14, h * 0.48, h * 0.13, h * 0.17, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   if (faceId !== 'cool') {
     ctx.fillStyle = 'rgba(255, 95, 162, 0.45)';
@@ -314,6 +383,44 @@ function drawPlane(ctx, skin, h, tilt) {
   ctx.restore();
 }
 
+/** Imán: la figura con una herradura roja en los pies (del lado al que se pega). */
+function drawMagnet(ctx, skin, h) {
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = h * 0.36;
+  ctx.strokeStyle = '#ff5f5f';
+  ctx.beginPath();
+  ctx.arc(0, h * 0.35, h * 0.62, 0, Math.PI);
+  ctx.stroke();
+  ctx.strokeStyle = '#e9f6ff';
+  [-1, 1].forEach((side) => {
+    ctx.beginPath();
+    ctx.moveTo(side * h * 0.62, h * 0.35);
+    ctx.lineTo(side * h * 0.62, h * 0.12);
+    ctx.stroke();
+  });
+  ctx.save();
+  ctx.scale(0.8, 0.8);
+  drawIcon(ctx, skin, h);
+  ctx.restore();
+}
+
+/** Onda: una flecha que apunta hacia donde va. */
+function drawWave(ctx, skin, h, tilt) {
+  ctx.save();
+  ctx.rotate(tilt);
+  ctx.lineWidth = Math.max(2, h * 0.12);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineJoin = 'round';
+  polygonPath(ctx, [[h * 1.1, 0], [-h * 0.8, -h * 0.75], [-h * 0.35, 0], [-h * 0.8, h * 0.75]]);
+  ctx.fillStyle = skin.color.primary;
+  ctx.fill();
+  ctx.stroke();
+  polygonPath(ctx, [[h * 0.55, 0], [-h * 0.35, -h * 0.35], [-h * 0.1, 0], [-h * 0.35, h * 0.35]]);
+  ctx.fillStyle = skin.color.secondary;
+  ctx.fill();
+  ctx.restore();
+}
+
 /**
  * Dibuja al jugador centrado en (x, y) de pantalla. angle: giro del cubo/pelota;
  * tilt: inclinación del cohete/avión según su velocidad vertical.
@@ -323,8 +430,14 @@ export function drawPlayer(ctx, skin, { x, y, size, mode = 'cube', angle = 0, ti
   ctx.save();
   ctx.translate(x, y);
   if (mode === 'cube') {
+    if (flipped) ctx.scale(1, -1);
     ctx.rotate(angle);
     drawIcon(ctx, skin, h);
+  } else if (mode === 'magnet') {
+    if (flipped) ctx.scale(1, -1);
+    drawMagnet(ctx, skin, h);
+  } else if (mode === 'wave') {
+    drawWave(ctx, skin, h, tilt);
   } else if (mode === 'ball') {
     if (flipped) ctx.scale(1, -1);
     drawBall(ctx, skin, h, angle);

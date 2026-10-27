@@ -1,3 +1,6 @@
+import { RAINBOW, drawHat } from './accessories.js';
+import { DINO_WORLDS, savedMedals } from './worlds.js';
+
 /**
  * Tipos de dinosaurio. Cada uno tiene colores propios, rasgos de dibujo y una pequeña
  * diferencia de física para que elegir uno u otro se note al jugar.
@@ -43,7 +46,33 @@ export const DINOS = [
     features: ['egg', 'baby'],
     physics: { jumpVelocity: 780, gravity: 2450, scale: 0.8 },
   },
+  // Se ganan al llegar a la meta de un mundo para expertos (`unlockWorld`).
+  {
+    id: 'dragon',
+    name: 'Dragoncito',
+    description: 'Planea y echa chispas',
+    unlockWorld: 'candy',
+    colors: { body: '#ff5f5f', belly: '#ffe066', accent: '#c92a2a' },
+    features: ['wings', 'dragonHorns', 'spikes'],
+    physics: { jumpVelocity: 790, gravity: 2050, scale: 1 },
+  },
+  {
+    id: 'unidino',
+    name: 'Unidino',
+    description: 'Mágico y saltarín',
+    unlockWorld: 'escape',
+    colors: { body: '#ffffff', belly: '#ffe1f4', accent: '#b57bff' },
+    features: ['mane', 'unicornHorn'],
+    physics: { jumpVelocity: 880, gravity: 2550, scale: 1 },
+  },
 ];
+
+/** ¿Tiene este dino disponible el jugador? Los especiales se ganan al llegar a la meta de su mundo. */
+export function isDinoUnlocked(dino, data) {
+  if (!dino.unlockWorld) return true;
+  const worldIndex = DINO_WORLDS.findIndex((world) => world.id === dino.unlockWorld);
+  return savedMedals(data, worldIndex).length > 0;
+}
 
 export function getDino(id) {
   return DINOS.find((dino) => dino.id === id) ?? DINOS[0];
@@ -205,6 +234,33 @@ const FEATURE_PAINTERS = {
     ctx.arc(36, -10, 2.5, 0, Math.PI * 2);
     ctx.fill();
   },
+  dragonHorns(ctx) {
+    ctx.fillStyle = '#ffe066';
+    [[40, -58], [48, -60]].forEach(([x, y]) => {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 4, y - 12);
+      ctx.lineTo(x + 5, y);
+      ctx.fill();
+    });
+  },
+  mane(ctx) {
+    RAINBOW.forEach((color, index) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.ellipse(34 - index * 3.5, -56 + index * 5, 6, 4, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  },
+  unicornHorn(ctx) {
+    ctx.fillStyle = '#ffd93d';
+    ctx.beginPath();
+    ctx.moveTo(46, -58);
+    ctx.lineTo(54, -78);
+    ctx.lineTo(53, -57);
+    ctx.closePath();
+    ctx.fill();
+  },
   baby(ctx, colors) {
     ctx.fillStyle = colors.accent;
     ctx.beginPath();
@@ -217,7 +273,7 @@ const FEATURE_PAINTERS = {
  * Dibuja un dino con el origen en sus pies (x, y = suelo).
  * frame avanza continuamente para animar piernas, alas y parpadeo.
  */
-export function drawDino(ctx, dino, { x, y, frame = 0, ducking = false, onGround = true, hurt = false }) {
+export function drawDino(ctx, dino, { x, y, frame = 0, ducking = false, onGround = true, hurt = false, hat = 'none' }) {
   const { colors, features, physics } = dino;
   ctx.save();
   ctx.translate(x, y);
@@ -237,6 +293,7 @@ export function drawDino(ctx, dino, { x, y, frame = 0, ducking = false, onGround
   drawHead(ctx, colors, blink || hurt);
   frontFeatures.forEach((feature) => FEATURE_PAINTERS[feature](ctx, colors, frame));
   if (features.includes('egg')) drawLegs(ctx, colors, runPhase, onGround);
+  drawHat(ctx, hat);
 
   ctx.restore();
 }

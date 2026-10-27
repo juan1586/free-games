@@ -11,8 +11,9 @@ import { RaceMatch } from '../../core/raceMatch.js';
 import { createRandom } from '../../core/random.js';
 import { trackEvent } from '../../core/analytics.js';
 import { formatRaceTime, placeLabel, showRaceEnded, showRacePodium } from '../../ui/raceResults.js';
-import { DINO_SIZE, drawDino, getDino } from './dinos.js';
-import { DINO_WORLDS, OBSTACLE_SIZES, drawObstacle } from './worlds.js';
+import { DINOS, DINO_SIZE, drawDino, getDino, isDinoUnlocked } from './dinos.js';
+import { DINO_WORLDS, MEDALS, OBSTACLE_MOTIONS, OBSTACLE_SIZES, drawObstacle, medalsForRun, moveObstacle, savedMedals } from './worlds.js';
+import { RAINBOW, getDinoTrail, getHat, isOwned } from './accessories.js';
 import { parseDinoPos } from './race.js';
 
 const VIEW_WIDTH = 800;
@@ -31,6 +32,23 @@ const SWIPE_DUCK_SECONDS = 0.55;
 const GAME_OVER_DELAY_MS = 750;
 const HITBOX_PADDING = 7;
 const FLYER_CHANCE = 0.28;
+const DEFAULT_GAP = [1.05, 1.9];
+/** Ayudas que aparecen en la pista (escudo, imán y estrella). */
+const POWER_UPS = {
+  shield: { icon: '🛡️', label: '¡Escudo!', color: '#5ab0ff' },
+  magnet: { icon: '🧲', label: '¡Imán de monedas!', color: '#ff5f5f', seconds: 7 },
+  star: { icon: '⭐', label: '¡Superestrella!', color: '#ffd93d', seconds: 5 },
+};
+const POWER_UP_CHANCE = 0.12;
+const POWER_UP_RADIUS = 15;
+const POWER_UP_HEIGHT = 62;
+const SHIELD_GRACE_SECONDS = 1;
+const MAGNET_REACH = 260;
+const MAGNET_PULL_SPEED = 700;
+const TRAIL_SPAWN_SECONDS = 0.05;
+const RAINBOW_TRAIL_POINTS = 26;
+const DOUBLE_GAP_SECONDS = 1;
+const PIT_EDGE = 10;
 const COIN_ROW_CHANCE = 0.45;
 /** Con el turbo al máximo se corre un 50 % más rápido y esos metros cuentan doble en los puntos. */
 const TURBO_BOOST = 0.5;
@@ -66,8 +84,12 @@ export class DinoGame {
     this.race = race ? getSession() : null;
     this.worldIndex = this.race ? this.race.meta.config.worldIndex : clamp(worldIndex, 0, data.unlockedWorld);
     this.world = DINO_WORLDS[this.worldIndex];
-    this.dino = getDino(data.dinoType);
+    const chosenDino = getDino(data.dinoType);
+    this.dino = isDinoUnlocked(chosenDino, data) ? chosenDino : DINOS[0];
     this.dinoName = sanitizeName(data.dinoName) || this.dino.name;
+    // Solo se lleva lo que se compró en la tienda.
+    this.hat = isOwned(data, getHat(data.hat)) ? getHat(data.hat).id : 'none';
+    this.trailKind = isOwned(data, getDinoTrail(data.trail)) ? getDinoTrail(data.trail).id : 'none';
     this.best = data.bestScore;
     // Obstáculos y monedas salen de aquí; en carrera, de una semilla compartida (misma pista para todos).
     this.courseRandom = Math.random;
@@ -75,6 +97,7 @@ export class DinoGame {
       this.match = new RaceMatch({ parsePos: parseDinoPos });
       this.match.rivals.forEach((rival) => {
         rival.dino = getDino(rival.look.dinoType);
+        rival.hat = rival.look.hat;
         rival.label = rival.look.dinoName || rival.dino.name;
       });
     }
@@ -189,6 +212,14 @@ export class DinoGame {
     this.shakeTime = 0;
     this.progressSaved = false;
     this.stumbleTime = 0;
+    this.powerUps = [];
+    this.hasShield = false;
+    this.graceTime = 0;
+    this.magnetTime = 0;
+    this.starTime = 0;
+    this.trailTimer = 0;
+    this.rainbowTrail = [];
+    this.runMedals = new Set(savedMedals(getGameData('dino'), this.worldIndex));
     this.hint.hidden = false;
     this.updateHud();
   }
@@ -299,10 +330,15 @@ export class DinoGame {
     this.updatePlayer(delta);
     this.updateEntities(step);
     this.spawnEntities();
+    this.updatePowerUps(delta, step);
     this.collectCoins();
+    this.updateTrail(delta, step);
     this.checkGoal();
-    if (this.status === 'running' && this.stumbleTime <= 0 && this.hitsObstacle()) {
-      if (this.race) this.stumble();
+    if (!this.race) this.checkMedals();
+    const isProtected = this.stumbleTime > 0 || this.graceTime > 0 || this.starTime > 0;
+    if (this.status === 'running' && !isProtected && this.hitsObstacle()) {
+      if (this.hasShield) this.breakShield();
+      else if (this.race) this.stumble();
       else this.gameOver();
     }
     this.updateHud();
@@ -338,7 +374,12 @@ export class DinoGame {
   }
 
   updateEntities(step) {
-    this.obstacles.forEach((obstacle) => (obstacle.x -= step * (obstacle.flyer ? 1.12 : 1)));
+    this.obstacles.forEach((obstacle) => {
+      const move = step * (obstacle.flyer ? 1.12 : 1);
+      obstacle.x -= move;
+      obstacle.travel += move;
+      moveObstacle(obstacle, GROUND_Y);
+    });
     this.obstacles = this.obstacles.filter((obstacle) => obstacle.x + obstacle.w > -20);
     this.coins.forEach((coin) => (coin.x -= step));
     this.coins = this.coins.filter((coin) => coin.x > -20 && !coin.collected);
@@ -351,20 +392,141 @@ export class DinoGame {
   spawnEntities() {
     if (this.distancePx < this.nextSpawnPx) return;
     const spawnAt = this.race ? this.nextSpawnPx : this.distancePx;
+    const { specials, flyerChance = FLYER_CHANCE, doubleChance = 0, gap: [gapMin, gapMax] = DEFAULT_GAP } = this.world;
     const canFly = Math.floor(spawnAt * METERS_PER_PIXEL) >= this.world.flyersFrom;
-    const isFlyer = canFly && this.courseRandom() < FLYER_CHANCE;
-    const kind = isFlyer ? this.world.flyer : this.coursePick(this.world.ground);
-    const [w, h] = OBSTACLE_SIZES[kind];
-    const bottom = isFlyer ? (this.courseRandom() < 0.5 ? HIGH_FLYER_BOTTOM : LOW_FLYER_BOTTOM) : GROUND_Y;
     const spawnX = VIEW_WIDTH + 30 - (this.distancePx - spawnAt);
-    this.obstacles.push({ kind, x: spawnX, y: bottom - h, w, h, flyer: isFlyer });
+    const gapSpeed = this.race ? this.speedAt(spawnAt) : this.effectiveSpeed;
+
+    let extraPx = 0;
+    if (specials && this.courseRandom() < specials.chance) {
+      this.addObstacle(this.coursePick(specials.kinds), spawnX);
+    } else if (canFly && this.courseRandom() < flyerChance) {
+      const bottom = this.courseRandom() < 0.5 ? HIGH_FLYER_BOTTOM : LOW_FLYER_BOTTOM;
+      this.addObstacle(this.world.flyer, spawnX, { flyer: true, bottom });
+    } else {
+      this.addObstacle(this.coursePick(this.world.ground), spawnX);
+      // Doble: un segundo obstáculo justo después, para saltar, aterrizar y volver a saltar.
+      if (doubleChance && this.courseRandom() < doubleChance) {
+        extraPx = gapSpeed * DOUBLE_GAP_SECONDS;
+        this.addObstacle(this.coursePick(this.world.ground), spawnX + extraPx);
+      }
+    }
 
     // El hueco se mide en segundos de reacción para que siga siendo justo a cualquier velocidad.
-    const gapSpeed = this.race ? this.speedAt(spawnAt) : this.effectiveSpeed;
-    const gap = gapSpeed * this.courseRange(1.05, 1.9);
-    this.nextSpawnPx = spawnAt + gap;
+    const gap = gapSpeed * this.courseRange(gapMin, gapMax);
+    this.nextSpawnPx = spawnAt + extraPx + gap;
 
-    if (this.courseRandom() < COIN_ROW_CHANCE) this.spawnCoinRow(spawnX + gap / 2);
+    if (this.courseRandom() < COIN_ROW_CHANCE) this.spawnCoinRow(spawnX + extraPx + gap / 2);
+    else if (this.courseRandom() < POWER_UP_CHANCE) {
+      this.powerUps.push({ kind: this.coursePick(Object.keys(POWER_UPS)), x: spawnX + extraPx + gap / 2, y: GROUND_Y - POWER_UP_HEIGHT });
+    }
+  }
+
+  // ---------- Ayudas ----------
+
+  updatePowerUps(delta, step) {
+    this.graceTime = Math.max(0, this.graceTime - delta);
+    this.magnetTime = Math.max(0, this.magnetTime - delta);
+    this.starTime = Math.max(0, this.starTime - delta);
+    this.powerUps.forEach((item) => (item.x -= step));
+    this.powerUps = this.powerUps.filter((item) => item.x > -30 && !item.taken);
+
+    const hitbox = this.getPlayerHitbox();
+    this.powerUps.forEach((item) => {
+      const box = { x: item.x - POWER_UP_RADIUS, y: item.y - POWER_UP_RADIUS, w: POWER_UP_RADIUS * 2, h: POWER_UP_RADIUS * 2 };
+      if (rectsOverlap(hitbox, box)) this.takePowerUp(item);
+    });
+
+    // El imán acerca las monedas al dino.
+    if (this.magnetTime > 0) {
+      const centerY = GROUND_Y - this.player.height - 30;
+      this.coins.forEach((coin) => {
+        const dx = DINO_X + 28 - coin.x;
+        const dy = centerY - coin.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance > MAGNET_REACH || distance < 1) return;
+        const pull = Math.min(distance, MAGNET_PULL_SPEED * delta);
+        coin.x += (dx / distance) * pull;
+        coin.y += (dy / distance) * pull;
+      });
+    }
+  }
+
+  takePowerUp(item) {
+    item.taken = true;
+    const powerUp = POWER_UPS[item.kind];
+    if (item.kind === 'shield') this.hasShield = true;
+    if (item.kind === 'magnet') this.magnetTime = powerUp.seconds;
+    if (item.kind === 'star') this.starTime = powerUp.seconds;
+    sounds.levelUp();
+    this.spawnSparkles(item.x, item.y, powerUp.color, 12);
+    this.showBanner(`${powerUp.icon} ${powerUp.label}`, 1100);
+  }
+
+  breakShield() {
+    this.hasShield = false;
+    this.graceTime = SHIELD_GRACE_SECONDS;
+    this.shakeTime = 0.2;
+    sounds.hit();
+    this.spawnSparkles(DINO_X + 30, GROUND_Y - this.player.height - 30, POWER_UPS.shield.color, 16);
+  }
+
+  // ---------- Medallas ----------
+
+  checkMedals() {
+    const fresh = medalsForRun(this.world, this.meters, this.coinsThisRun).filter((id) => !this.runMedals.has(id));
+    if (!fresh.length) return;
+    fresh.forEach((id) => this.runMedals.add(id));
+    const data = getGameData('dino');
+    updateGameData('dino', { medals: { ...data.medals, [this.world.id]: [...this.runMedals] } });
+    // La de bronce llega con la meta, que ya tiene su propio aviso.
+    const shown = MEDALS.filter((medal) => fresh.includes(medal.id) && medal.id !== 'bronze');
+    if (!shown.length) return;
+    sounds.achievement();
+    this.showBanner(shown.map((medal) => `${medal.icon} ¡Medalla de ${medal.name.toLowerCase()}!`).join(' '), 2200);
+    trackEvent(`dino-mundo-${this.worldIndex + 1}-medalla-${shown.at(-1).id}`, `Dino · medalla en ${this.world.name}`);
+  }
+
+  // ---------- Estela de la tienda ----------
+
+  updateTrail(delta, step) {
+    if (this.trailKind === 'none') return;
+    const centerY = GROUND_Y - this.player.height - 26;
+    if (this.trailKind === 'rainbow') {
+      this.rainbowTrail.forEach((point) => (point.x -= step));
+      this.rainbowTrail.push({ x: DINO_X + 12, y: centerY });
+      if (this.rainbowTrail.length > RAINBOW_TRAIL_POINTS) this.rainbowTrail.shift();
+      return;
+    }
+    this.trailTimer -= delta;
+    if (this.trailTimer > 0) return;
+    this.trailTimer = TRAIL_SPAWN_SECONDS;
+    this.particles.push({
+      x: DINO_X + 8,
+      y: centerY + random(-12, 12),
+      vx: random(-260, -160),
+      vy: random(-40, 10),
+      life: 0.6,
+      maxLife: 0.6,
+      size: random(5, 8),
+      color: this.trailKind === 'hearts' ? '#ff5fa2' : pick(['#ffd93d', '#ffffff', '#fff27a']),
+      shape: this.trailKind === 'hearts' ? 'heart' : 'star',
+      floaty: true,
+    });
+  }
+
+  addObstacle(kind, x, { flyer = false, bottom = GROUND_Y } = {}) {
+    const [w, h] = OBSTACLE_SIZES[kind];
+    // Los huecos empiezan en el suelo y se hunden hacia abajo.
+    const top = kind === 'pit' ? GROUND_Y : bottom - h;
+    const obstacle = { kind, x, y: top, w, h, flyer, travel: 0 };
+    const motion = OBSTACLE_MOTIONS[kind];
+    if (motion) {
+      obstacle.baseBottom = motion.lift === undefined ? Math.min(bottom, GROUND_Y - (motion.amplitude ?? 0)) : GROUND_Y - motion.lift;
+      obstacle.phase = this.courseRange(0, Math.PI * 2);
+      moveObstacle(obstacle, GROUND_Y);
+    }
+    this.obstacles.push(obstacle);
   }
 
   spawnCoinRow(centerX) {
@@ -394,8 +556,17 @@ export class DinoGame {
   hitsObstacle() {
     const hitbox = this.getPlayerHitbox();
     return this.obstacles.some((obstacle) =>
-      rectsOverlap(hitbox, { x: obstacle.x + 4, y: obstacle.y + 4, w: obstacle.w - 8, h: obstacle.h - 6 }),
+      obstacle.kind === 'pit'
+        ? this.fallsInPit(obstacle)
+        : rectsOverlap(hitbox, { x: obstacle.x + 4, y: obstacle.y + 4, w: obstacle.w - 8, h: obstacle.h - 6 }),
     );
+  }
+
+  /** En un hueco solo se cae quien pisa el suelo con los pies dentro de él. */
+  fallsInPit(pit) {
+    const feetX = DINO_X + 26 * this.dino.physics.scale;
+    const isInside = feetX > pit.x + PIT_EDGE && feetX < pit.x + pit.w - PIT_EDGE;
+    return isInside && this.player.onGround;
   }
 
   collectCoins() {
@@ -419,17 +590,21 @@ export class DinoGame {
     }
     const data = getGameData('dino');
     const nextWorld = Math.min(this.worldIndex + 1, DINO_WORLDS.length - 1);
+    const newDino = DINOS.find((dino) => dino.unlockWorld === this.world.id && !isDinoUnlocked(dino, data));
     updateGameData('dino', { unlockedWorld: Math.max(data.unlockedWorld, nextWorld) });
     trackEvent(`dino-mundo-${this.worldIndex + 1}-superado`, `Dino · ${this.world.name} superado`);
     sounds.win();
     const isLastWorld = this.worldIndex === DINO_WORLDS.length - 1;
-    this.showBanner(isLastWorld ? '🏆 ¡Completaste todos los mundos!' : `🎉 ¡Desbloqueaste ${DINO_WORLDS[nextWorld].name}!`, 2600);
+    const unlocked = isLastWorld ? '🏆 ¡Completaste todos los mundos!' : `🎉 ¡Desbloqueaste ${DINO_WORLDS[nextWorld].name}!`;
+    this.showBanner(newDino ? `${unlocked} Y un dino nuevo: ¡${newDino.name}!` : unlocked, 3200);
     this.spawnConfetti();
   }
 
   gameOver() {
     this.status = 'over';
     this.shakeTime = 0.3;
+    // Si cayó en un hueco, se le ve hundido.
+    if (this.obstacles.some((obstacle) => obstacle.kind === 'pit' && this.fallsInPit(obstacle))) this.player.height = -26;
     sounds.hit();
     this.spawnSparkles(DINO_X + 30, GROUND_Y - this.player.height - 30, '#ff5f5f', 14);
     const isNewRecord = this.saveProgress();
@@ -749,7 +924,7 @@ export class DinoGame {
     const ducking = Boolean(rival.pos?.duck);
     ctx.save();
     ctx.globalAlpha = RIVAL_ALPHA;
-    drawDino(ctx, rival.dino, { x, y: footY, frame: this.frame, ducking, onGround: rival.shown.h < 1 });
+    drawDino(ctx, rival.dino, { x, y: footY, frame: this.frame, ducking, onGround: rival.shown.h < 1, hat: rival.hat });
     ctx.restore();
     const labelY = Math.max(NAME_LABEL_MIN_Y, footY - (ducking ? 52 : 86) * rival.dino.physics.scale);
     const label = `${rival.avatar} ${rival.label}`;
@@ -826,7 +1001,7 @@ export class DinoGame {
     this.particles.forEach((particle) => {
       particle.x += particle.vx * delta;
       particle.y += particle.vy * delta;
-      particle.vy += 300 * delta;
+      if (!particle.floaty) particle.vy += 300 * delta;
       particle.life -= delta;
     });
     this.particles = this.particles.filter((particle) => particle.life > 0);
@@ -862,7 +1037,7 @@ export class DinoGame {
     ctx.fillRect(-10, -10, VIEW_WIDTH + 20, GROUND_Y + 10);
 
     this.drawSunAndMoon(night);
-    if (!this.world.alwaysNight) this.drawClouds();
+    if (!this.world.alwaysNight && !this.world.noClouds) this.drawClouds();
     this.drawHills(palette.far, 0.12, 70, 0.006, 38);
     this.drawHills(palette.near, 0.3, 38, 0.011, 22);
 
@@ -874,7 +1049,10 @@ export class DinoGame {
 
     this.drawGround();
     this.drawCoins();
-    this.obstacles.forEach((obstacle) => drawObstacle(ctx, obstacle.kind, obstacle.x, obstacle.y, palette, this.frame));
+    this.drawPowerUps();
+    this.drawRainbowTrail();
+    this.drawObstacles();
+    if (this.world.chase) this.drawLavaWave();
     this.drawTurbo();
     if (this.race) this.rivalList.forEach((rival, index) => this.drawRival(rival, index));
     this.drawPlayer();
@@ -972,6 +1150,135 @@ export class DinoGame {
     }
   }
 
+  drawObstacles() {
+    const ctx = this.ctx;
+    const { palette } = this.world;
+    this.obstacles.forEach((obstacle) => {
+      // Sombra de aviso de lo que cae del cielo: crece a medida que se acerca al suelo.
+      if (OBSTACLE_MOTIONS[obstacle.kind]?.kind === 'fall') {
+        const closeness = clamp((obstacle.y + obstacle.h) / GROUND_Y, 0, 1);
+        ctx.fillStyle = `rgba(0, 0, 0, ${0.15 + closeness * 0.2})`;
+        ctx.beginPath();
+        ctx.ellipse(obstacle.x + obstacle.w / 2, GROUND_Y + 3, obstacle.w * (0.3 + closeness * 0.35), 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = obstacle.alpha ?? 1;
+      drawObstacle(ctx, obstacle.kind, obstacle.x, obstacle.y, palette, this.frame);
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  /** Ola de lava que persigue al dino en el mundo final. Se acerca cuando tropieza o se detiene. */
+  drawLavaWave() {
+    const ctx = this.ctx;
+    const stumbleSurge = this.stumbleTime > 0 ? (this.stumbleTime / STUMBLE_SECONDS) * 30 : 0;
+    const reach = (this.status === 'over' ? 50 : 22) + Math.sin(this.time * 3) * 6 + stumbleSurge;
+    const glow = ctx.createLinearGradient(0, 0, reach + 60, 0);
+    glow.addColorStop(0, 'rgba(255, 90, 31, 0.55)');
+    glow.addColorStop(1, 'rgba(255, 90, 31, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(-10, 0, reach + 70, VIEW_HEIGHT);
+    ctx.fillStyle = '#ff5a1f';
+    ctx.beginPath();
+    ctx.moveTo(-10, VIEW_HEIGHT);
+    for (let y = VIEW_HEIGHT; y >= 60; y -= 12) {
+      ctx.lineTo(reach + Math.sin(y * 0.08 + this.time * 6) * 8 - (VIEW_HEIGHT - y) * 0.08, y);
+    }
+    ctx.lineTo(-10, 60);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffd93d';
+    for (let index = 0; index < 6; index += 1) {
+      const y = 90 + index * 30 + Math.sin(this.time * 4 + index) * 8;
+      ctx.beginPath();
+      ctx.arc(reach - 14 - (index % 2) * 6 - (VIEW_HEIGHT - y) * 0.08, y, 3 + (index % 3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  drawPowerUps() {
+    const ctx = this.ctx;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '18px system-ui, sans-serif';
+    this.powerUps.forEach((item, index) => {
+      const bob = Math.sin(this.time * 4 + index) * 4;
+      const { color, icon } = POWER_UPS[item.kind];
+      ctx.globalAlpha = 0.35 + Math.sin(this.time * 8) * 0.1;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(item.x, item.y + bob, POWER_UP_RADIUS + 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(item.x, item.y + bob, POWER_UP_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillText(icon, item.x, item.y + bob + 1);
+    });
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  drawRainbowTrail() {
+    if (this.rainbowTrail.length < 2) return;
+    const ctx = this.ctx;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    RAINBOW.forEach((color, band) => {
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      this.rainbowTrail.forEach((point, index) => {
+        const y = point.y - 10 + band * 4;
+        if (index === 0) ctx.moveTo(point.x, y);
+        else ctx.lineTo(point.x, y);
+      });
+      ctx.stroke();
+    });
+    ctx.lineCap = 'butt';
+  }
+
+  /** Escudo, brillo de estrella y contador de las ayudas activas. */
+  drawPlayerEffects(footY) {
+    const ctx = this.ctx;
+    const centerY = footY - 30 * this.dino.physics.scale;
+    if (this.starTime > 0) {
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle = RAINBOW[Math.floor(this.time * 12) % RAINBOW.length];
+      ctx.beginPath();
+      ctx.arc(DINO_X + 28, centerY, 44, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    if (this.hasShield || this.graceTime > 0) {
+      const flicker = this.graceTime > 0 && Math.floor(this.time * 14) % 2 === 0;
+      if (!flicker) {
+        ctx.strokeStyle = 'rgba(90, 176, 255, 0.85)';
+        ctx.fillStyle = 'rgba(90, 176, 255, 0.18)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(DINO_X + 28, centerY, 42, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+    const active = [
+      this.hasShield ? '🛡️' : '',
+      this.magnetTime > 0 ? `🧲 ${Math.ceil(this.magnetTime)}` : '',
+      this.starTime > 0 ? `⭐ ${Math.ceil(this.starTime)}` : '',
+    ].filter(Boolean);
+    if (!active.length) return;
+    ctx.font = '600 15px Fredoka, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    const text = active.join('   ');
+    const width = ctx.measureText(text).width + 18;
+    ctx.beginPath();
+    ctx.roundRect(20, 34, width, 24, 12);
+    ctx.fill();
+    ctx.fillStyle = '#2b2140';
+    ctx.fillText(text, 29, 51);
+  }
+
   drawCoins() {
     const ctx = this.ctx;
     this.coins.forEach((coin, index) => {
@@ -1029,6 +1336,8 @@ export class DinoGame {
     ctx.ellipse(DINO_X + 28, GROUND_Y + 2, Math.max(8, 24 - height * 0.1), 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    this.drawPlayerEffects(footY);
+
     // Al tropezar, el dino parpadea.
     const isBlinking = this.stumbleTime > 0 && Math.floor(this.time * 12) % 2 === 0;
     if (!isBlinking) {
@@ -1039,6 +1348,7 @@ export class DinoGame {
         ducking,
         onGround,
         hurt: this.status === 'over' || this.stumbleTime > 0,
+        hat: this.hat,
       });
     }
 
@@ -1060,7 +1370,24 @@ export class DinoGame {
     this.particles.forEach((particle) => {
       ctx.globalAlpha = Math.max(0, particle.life / particle.maxLife);
       ctx.fillStyle = particle.color;
-      ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
+      const { x, y, size } = particle;
+      if (particle.shape === 'heart') {
+        ctx.beginPath();
+        ctx.moveTo(x, y + size);
+        ctx.bezierCurveTo(x - size * 1.4, y, x - size * 0.8, y - size * 1.1, x, y - size * 0.4);
+        ctx.bezierCurveTo(x + size * 0.8, y - size * 1.1, x + size * 1.4, y, x, y + size);
+        ctx.fill();
+      } else if (particle.shape === 'star') {
+        ctx.beginPath();
+        for (let point = 0; point < 8; point += 1) {
+          const angle = (point / 8) * Math.PI * 2;
+          const radius = point % 2 === 0 ? size : size * 0.35;
+          ctx.lineTo(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+        }
+        ctx.fill();
+      } else {
+        ctx.fillRect(x, y, size, size);
+      }
     });
     ctx.globalAlpha = 1;
     this.confetti.forEach((piece) => {
@@ -1080,7 +1407,7 @@ export class DinoGame {
     const count = kind === 'snow' ? 40 : 18;
     for (let index = 0; index < count; index += 1) {
       const seed = index * 97.13;
-      const fall = kind === 'embers' ? -1 : 1;
+      const fall = kind === 'embers' || kind === 'bubbles' ? -1 : 1;
       const speedY = 20 + (seed % 30);
       const x = (((seed * 7 - this.distancePx * (kind === 'leaves' ? 0.6 : 0.3) + Math.sin(this.time + seed) * 20) % VIEW_WIDTH) + VIEW_WIDTH) % VIEW_WIDTH;
       const y = (((seed * 3 + fall * this.time * speedY) % VIEW_HEIGHT) + VIEW_HEIGHT) % VIEW_HEIGHT;
@@ -1089,6 +1416,26 @@ export class DinoGame {
         ctx.beginPath();
         ctx.arc(x, y, 1.5 + (index % 3), 0, Math.PI * 2);
         ctx.fill();
+      } else if (kind === 'bubbles') {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 2 + (index % 4), 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (kind === 'sprinkles') {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(this.time * 2 + index);
+        ctx.fillStyle = ['#ff5fa2', '#ffd93d', '#4dd4ac', '#5ab0ff', '#b57bff'][index % 5];
+        ctx.fillRect(-4, -1.5, 8, 3);
+        ctx.restore();
+      } else if (kind === 'fireflies') {
+        ctx.fillStyle = '#fff27a';
+        ctx.globalAlpha = 0.3 + 0.7 * Math.abs(Math.sin(this.time * 2 + index));
+        ctx.beginPath();
+        ctx.arc(x, y * 0.8, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
       } else if (kind === 'embers') {
         ctx.fillStyle = index % 2 ? '#ffd93d' : '#ff7a3d';
         ctx.globalAlpha = 0.5 + 0.5 * Math.sin(this.time * 3 + index);

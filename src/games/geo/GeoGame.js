@@ -282,7 +282,7 @@ export class GeoGame {
     this.angle = 0;
     this.tilt = 0;
     this.cameraY = 0;
-    this.ceilingAlpha = this.state.mode === 'cube' ? 0 : 1;
+    this.ceilingAlpha = this.hasCeiling ? 1 : 0;
     this.trail = [];
     this.trailTimer = 0;
     this.shakeTime = 0;
@@ -433,7 +433,7 @@ export class GeoGame {
   placeCheckpoint() {
     if (!this.useCheckpoints) return;
     const state = this.state;
-    const isStable = state.mode === 'rocket' || state.mode === 'plane' || state.onGround;
+    const isStable = state.mode === 'rocket' || state.mode === 'plane' || state.mode === 'wave' || state.onGround;
     if (state.time - this.lastCheckpointTime < CHECKPOINT_EVERY_SECONDS || !isStable) return;
     if (!isSafeSpot(state, this.level)) return;
     this.checkpoints.push(cloneState(state));
@@ -512,6 +512,7 @@ export class GeoGame {
       practice: this.practice,
       attempts: this.attempts,
       speed: this.speed.id,
+      expert: Boolean(this.world.expert),
     });
     this.saveAchievements(achievements);
 
@@ -855,12 +856,14 @@ export class GeoGame {
     } else if (state.mode === 'ball') {
       if (this.status === 'running') this.angle += ((this.currentSpeed * delta) / (PLAYER_SIZE / 2)) * state.gravityDir;
     }
-    const targetTilt = state.mode === 'rocket' || state.mode === 'plane' ? clamp(-Math.atan2(state.vy, this.level.speed), -MAX_TILT, MAX_TILT) : 0;
+    let targetTilt = 0;
+    if (state.mode === 'rocket' || state.mode === 'plane') targetTilt = clamp(-Math.atan2(state.vy, this.level.speed), -MAX_TILT, MAX_TILT);
+    if (state.mode === 'wave') targetTilt = -Math.atan2(state.vy, this.currentSpeed);
     this.tilt += (targetTilt - this.tilt) * Math.min(1, delta * 14);
 
-    const targetCameraY = state.mode === 'cube' ? Math.max(0, state.y - CAMERA_LIFT_FROM) : 0;
+    const targetCameraY = this.hasCeiling ? 0 : Math.max(0, state.y - CAMERA_LIFT_FROM);
     this.cameraY += (targetCameraY - this.cameraY) * Math.min(1, delta * 5);
-    const targetCeiling = state.mode === 'cube' ? 0 : 1;
+    const targetCeiling = this.hasCeiling ? 1 : 0;
     this.ceilingAlpha += (targetCeiling - this.ceilingAlpha) * Math.min(1, delta * 6);
   }
 
@@ -876,8 +879,15 @@ export class GeoGame {
     this.trailTimer -= delta;
     if (this.trailTimer > 0) return;
     this.trailTimer = TRAIL_SPAWN_SECONDS;
-    const kinds = { sparkle: 'star', bubbles: 'bubble', hearts: 'heart' };
-    const colors = { sparkle: '#ffd93d', bubbles: '#ffffff', hearts: '#ff5fa2' };
+    const kinds = { sparkle: 'star', bubbles: 'bubble', hearts: 'heart', shooting: 'star', notes: 'note', fire: 'dot' };
+    const colors = {
+      sparkle: '#ffd93d',
+      bubbles: '#ffffff',
+      hearts: '#ff5fa2',
+      shooting: pick(['#ffffff', '#ffd93d', '#9fd0ff']),
+      notes: pick(['#ff5fa2', '#5ab0ff', '#b57bff']),
+      fire: pick(['#ff5a1f', '#ff9f43', '#ffd93d']),
+    };
     this.particles.push({
       x: x - 14,
       y: y + random(-8, 8),
@@ -972,9 +982,14 @@ export class GeoGame {
 
   // ---------- Dibujo ----------
 
-  /** Velocidad horizontal actual (incluye el turbo) para animaciones. */
+  /** Velocidad horizontal actual (incluye el turbo y los portales de velocidad) para animaciones. */
   get currentSpeed() {
-    return this.level.speed * (this.turboHeld && this.status === 'running' ? TURBO_FACTOR : 1);
+    return this.level.speed * this.state.speedFactor * (this.turboHeld && this.status === 'running' ? TURBO_FACTOR : 1);
+  }
+
+  /** Solo el cubo con la gravedad normal va sin techo (y con la cámara que lo sigue al subir). */
+  get hasCeiling() {
+    return this.state.mode !== 'cube' || this.state.gravityDir === -1;
   }
 
   get view() {
@@ -1089,6 +1104,39 @@ export class GeoGame {
         if (item.depth > 0.2) ctx.fill();
         else ctx.stroke();
         break;
+      case 'planet':
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(0, 0, size * 0.8, size * 0.2, 0.3, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'ring':
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 0.25, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'disco': {
+        // Bolas de discoteca que cambian de color con el ritmo.
+        ctx.fillStyle = RAINBOW[Math.floor(this.time * 2 + item.phase * 3) % RAINBOW.length];
+        ctx.globalAlpha = 0.35;
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.moveTo(-size * 0.5, 0);
+        ctx.lineTo(size * 0.5, 0);
+        ctx.moveTo(0, -size * 0.5);
+        ctx.lineTo(0, size * 0.5);
+        ctx.stroke();
+        ctx.fillStyle = this.palette.decor;
+        break;
+      }
       default:
         ctx.beginPath();
         ctx.arc(0, 0, size * 0.8, 0, Math.PI * 2);
@@ -1289,6 +1337,11 @@ export class GeoGame {
         ctx.bezierCurveTo(x - size * 1.4, y, x - size * 0.8, y - size * 1.1, x, y - size * 0.4);
         ctx.bezierCurveTo(x + size * 0.8, y - size * 1.1, x + size * 1.4, y, x, y + size);
         ctx.fill();
+      } else if (particle.kind === 'note') {
+        ctx.font = `bold ${size * 3}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('♪', x, y);
       } else if (particle.kind === 'star') {
         for (let i = 0; i < 8; i += 1) {
           const angle = (i / 8) * Math.PI * 2;

@@ -10,7 +10,7 @@ import { ACHIEVEMENTS, MAX_STARS, countStars, findNewAchievements } from './achi
 const PREVIEW_WIDTH = 260;
 const PREVIEW_HEIGHT = 150;
 const SHAPE_CANVAS_SIZE = 64;
-const PREVIEW_MODES = ['cube', 'rocket', 'ball', 'plane'];
+const PREVIEW_MODES = ['cube', 'rocket', 'ball', 'plane', 'magnet', 'wave'];
 const PREVIEW_MODE_SECONDS = 2.4;
 const COINS_PER_LEVEL = 3;
 
@@ -22,7 +22,16 @@ function suggestedLevel(data) {
   return (unlocked.find((level) => !levelProgress(data, level).completed) ?? unlocked.at(-1)).index;
 }
 
+/** Quien terminó el último nivel cuando aún no había más encuentra abierto el siguiente. */
+function unlockAddedLevels(data) {
+  const lastUnlocked = GEO_LEVELS[data.unlockedLevel];
+  if (data.unlockedLevel < GEO_LEVELS.length - 1 && levelProgress(data, lastUnlocked).completed) {
+    updateGameData('geo', { unlockedLevel: data.unlockedLevel + 1 });
+  }
+}
+
 export function mountGeoSetup(root) {
+  unlockAddedLevels(getGameData('geo'));
   let data = getGameData('geo');
   let selectedLevel = suggestedLevel(data);
   let practice = false;
@@ -81,14 +90,17 @@ export function mountGeoSetup(root) {
   const worldCards = GEO_WORLDS.map((world, worldIndex) => {
     const buttons = levelButtons.filter((button) => GEO_LEVELS[button.dataset.index].worldIndex === worldIndex);
     const isLocked = buttons.every((button) => button.disabled);
-    return el('article', { className: `geo-world geo-world--${world.id} ${isLocked ? 'is-locked' : ''}` }, [
+    const isFirstExpert = world.expert && !GEO_WORLDS[worldIndex - 1]?.expert;
+    const card = el('article', { className: `geo-world geo-world--${world.id} ${isLocked ? 'is-locked' : ''}` }, [
       el('header', { className: 'geo-world__header' }, [
         el('span', { className: 'geo-world__emoji', text: isLocked ? '🔒' : world.emoji, attrs: { 'aria-hidden': 'true' } }),
         el('div', {}, [el('strong', { text: world.name }), el('small', { text: isLocked ? 'Termina el mundo anterior' : world.mechanic })]),
       ]),
       el('div', { className: 'geo-levels' }, buttons),
     ]);
-  });
+    if (!isFirstExpert) return card;
+    return [el('h3', { className: 'world-group__title world-group__title--expert', text: '🔥 Mundos para expertos' }), card];
+  }).flat();
 
   // ---------- Modo y jugar ----------
 

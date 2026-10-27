@@ -8,7 +8,15 @@ export const CELL = 40;
 export const PLAYER_SIZE = 36;
 export const CEILING_Y = 7 * CELL;
 export const STEP_SECONDS = 1 / 240;
-export const MODES = ['cube', 'rocket', 'ball', 'plane'];
+export const MODES = ['cube', 'rocket', 'ball', 'plane', 'magnet', 'wave'];
+
+/** Portales que no cambian de modo: dan la vuelta a la gravedad o cambian la velocidad. */
+export const SPECIAL_PORTALS = {
+  flipUp: { gravityDir: -1 },
+  flipDown: { gravityDir: 1 },
+  fast: { speedFactor: 1.3 },
+  normalSpeed: { speedFactor: 1 },
+};
 
 /** Velocidades elegibles antes de jugar. El factor multiplica la velocidad del mundo. */
 export const SPEEDS = {
@@ -32,6 +40,11 @@ const CUBE = { gravity: 3000, jump: 850, pad: 1150, orb: 850, maxFall: 1100 };
 const BALL = { gravity: 2600, kick: 250, maxSpeed: 900 };
 const ROCKET = { acceleration: 1700, maxSpeed: 380 };
 const PLANE = { gravity: 1700, flap: 520, maxFall: 520 };
+/** El imán no cae: va pegado a su lado y salta de golpe al contrario. */
+const MAGNET = { speed: 1500 };
+/** La onda sube o baja en diagonal: pendiente respecto a la velocidad horizontal. */
+const WAVE = { slope: 0.9 };
+const GRAVITY_ORB_PUSH = 400;
 const FLYER_BOOST = 600;
 
 const SPIKE_HIT = { inset: 13, height: 22, smallHeight: 11 };
@@ -93,6 +106,7 @@ export function createState() {
     vy: 0,
     mode: 'cube',
     gravityDir: 1,
+    speedFactor: 1,
     onGround: true,
     buffer: 0,
     time: 0,
@@ -147,6 +161,20 @@ function triggerObjects(state, nearby, events) {
 
     if (object.type === 'portal' && centerX >= object.x) {
       state.used.add(object.id);
+      const special = SPECIAL_PORTALS[object.mode];
+      if (special) {
+        if (special.gravityDir && state.gravityDir !== special.gravityDir) {
+          state.gravityDir = special.gravityDir;
+          state.onGround = false;
+          state.vy = clamp(state.vy, -200, 200);
+          events.push({ type: 'portal', mode: object.mode });
+        }
+        if (special.speedFactor && state.speedFactor !== special.speedFactor) {
+          state.speedFactor = special.speedFactor;
+          events.push({ type: 'portal', mode: object.mode });
+        }
+        return;
+      }
       if (state.mode !== object.mode) {
         state.mode = object.mode;
         state.gravityDir = 1;
@@ -158,7 +186,7 @@ function triggerObjects(state, nearby, events) {
 
     if (object.type === 'pad' && rectsOverlap(box, { x: object.x + 4, y: object.y, w: CELL - 8, h: 12 })) {
       state.used.add(object.id);
-      if (state.mode === 'cube') state.vy = CUBE.pad;
+      if (state.mode === 'cube') state.vy = CUBE.pad * state.gravityDir;
       else if (state.mode === 'ball') state.gravityDir *= -1;
       else state.vy = FLYER_BOOST;
       state.onGround = false;
@@ -170,7 +198,11 @@ function triggerObjects(state, nearby, events) {
     if (isNearOrb && state.buffer > 0) {
       state.used.add(object.id);
       state.buffer = 0;
-      if (state.mode === 'cube') state.vy = CUBE.orb;
+      if (object.kind === 'gravity') {
+        // Aro azul: da la vuelta a la gravedad y empuja hacia el nuevo suelo.
+        state.gravityDir *= -1;
+        state.vy = -GRAVITY_ORB_PUSH * state.gravityDir;
+      } else if (state.mode === 'cube') state.vy = CUBE.orb * state.gravityDir;
       else if (state.mode === 'ball') {
         state.gravityDir *= -1;
         state.vy = BALL.kick * state.gravityDir;
@@ -188,16 +220,30 @@ function triggerObjects(state, nearby, events) {
   });
 }
 
-function applyModeForces(state, held, dt, events) {
+function applyModeForces(state, held, dt, events, forward) {
   switch (state.mode) {
     case 'cube':
       if (state.onGround && (held || state.buffer > 0)) {
-        state.vy = CUBE.jump;
+        state.vy = CUBE.jump * state.gravityDir;
         state.onGround = false;
         state.buffer = 0;
         events.push({ type: 'jump' });
       }
-      state.vy = Math.max(state.vy - CUBE.gravity * dt, -CUBE.maxFall);
+      // Con la gravedad al revés todo es simétrico: cae hacia el techo.
+      if (state.gravityDir === 1) state.vy = Math.max(state.vy - CUBE.gravity * dt, -CUBE.maxFall);
+      else state.vy = Math.min(state.vy + CUBE.gravity * dt, CUBE.maxFall);
+      break;
+    case 'magnet':
+      if (state.onGround && state.buffer > 0) {
+        state.gravityDir *= -1;
+        state.onGround = false;
+        state.buffer = 0;
+        events.push({ type: 'flip' });
+      }
+      state.vy = -MAGNET.speed * state.gravityDir;
+      break;
+    case 'wave':
+      state.vy = (held ? 1 : -1) * forward * WAVE.slope;
       break;
     case 'ball':
       if (state.onGround && state.buffer > 0) {
@@ -241,7 +287,8 @@ function resolveVertical(state, nearby) {
   };
 
   if (state.y <= 0) landOnTop(0);
-  if (state.mode !== 'cube' && state.y + PLAYER_SIZE >= CEILING_Y) landOnBottom(CEILING_Y);
+  const hasCeiling = state.mode !== 'cube' || state.gravityDir === -1;
+  if (hasCeiling && state.y + PLAYER_SIZE >= CEILING_Y) landOnBottom(CEILING_Y);
 
   for (const object of nearby) {
     if (object.type !== 'block' || !rectsOverlap(playerBox(state), object)) continue;
@@ -273,7 +320,8 @@ export function step(state, level, input, dt = STEP_SECONDS) {
   if (input.pressed) state.buffer = INPUT_BUFFER_SECONDS;
   state.time += dt;
 
-  state.x += level.speed * (input.turbo ? TURBO_FACTOR : 1) * dt;
+  const forward = level.speed * state.speedFactor * (input.turbo ? TURBO_FACTOR : 1);
+  state.x += forward * dt;
   let nearby = nearbyObjects(level, state.x);
   if (hitsWall(state, nearby)) {
     state.dead = true;
@@ -282,7 +330,7 @@ export function step(state, level, input, dt = STEP_SECONDS) {
   }
 
   triggerObjects(state, nearby, events);
-  applyModeForces(state, input.held, dt, events);
+  applyModeForces(state, input.held, dt, events, forward);
   state.y += state.vy * dt;
   nearby = nearbyObjects(level, state.x);
 
