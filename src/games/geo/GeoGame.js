@@ -326,7 +326,7 @@ export class GeoGame {
     this.held = false;
     this.loop.start();
     if (this.status === 'running') this.music.start();
-    // Si la amiga avisó de que estaba lista mientras estábamos en pausa, se le vuelve a preguntar.
+    // Si la rival avisó de que estaba lista mientras estábamos en pausa, se le vuelve a preguntar.
     if (this.race && this.status === 'waiting') send({ type: 'ready' });
   }
 
@@ -557,7 +557,7 @@ export class GeoGame {
     });
   }
 
-  // ---------- Carrera con amiga ----------
+  // ---------- Carrera con amigos ----------
 
   get isHost() {
     return this.race.role === 'host';
@@ -580,7 +580,7 @@ export class GeoGame {
     this.resetRace();
   }
 
-  /** Deja todo listo en la salida y avisa a la amiga; la anfitriona da la señal cuando las dos están listas. */
+  /** Deja todo listo en la salida y avisa a la rival; la anfitriona da la señal cuando ambas partes están listas. */
   resetRace() {
     clearTimeout(this.timer);
     clearTimeout(this.resultTimer);
@@ -1271,7 +1271,7 @@ export class GeoGame {
     });
   }
 
-  /** La amiga se ve como un fantasma semitransparente; si va fuera de la pantalla, una flecha en el borde. */
+  /** La rival se ve como un fantasma semitransparente; si va fuera de la pantalla, una flecha en el borde. */
   drawRival(view) {
     if (!this.race) return;
     const rival = this.rival;

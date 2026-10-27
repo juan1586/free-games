@@ -27,7 +27,7 @@ const PARSERS = {
     const skin = message.skin && typeof message.skin === 'object' ? message.skin : {};
     return {
       type: 'hello',
-      name: sanitizeName(message.name) || 'Amiga',
+      name: sanitizeName(message.name) || 'Rival',
       avatar: AVATARS.includes(message.avatar) ? message.avatar : AVATARS[0],
       // resolveSkin cambia por la primera opción cualquier id desconocido.
       skin: { shape: skinId(skin.shape), color: skinId(skin.color), trail: skinId(skin.trail), face: skinId(skin.face) },
@@ -70,5 +70,5 @@ export function parseRaceMessage(raw) {
 /** Presentación de la jugadora activa para la otra tablet. */
 export function createHello() {
   const player = getActivePlayer();
-  return { type: 'hello', name: player?.name ?? 'Amiga', avatar: player?.avatar ?? AVATARS[0], skin: getGameData('geo').skin };
+  return { type: 'hello', name: player?.name ?? 'Rival', avatar: player?.avatar ?? AVATARS[0], skin: getGameData('geo').skin };
 }

@@ -83,11 +83,12 @@ export function mountGeoRaceLobby(root, { levelIndex }) {
   function handleDisconnect() {
     const session = getSession();
     if (!session) return;
+    const rivalName = session.meta.rival?.name ?? 'Tu rival';
     session.meta.rival = null;
     sounds.hit();
     if (session.role === 'host') {
       renderHostWaiting(session.code);
-      setStatus('Tu amiga se fue 👋. Puede volver a entrar con el mismo código.', 'warn');
+      setStatus(`${rivalName} se fue 👋. Puede volver a entrar con el mismo código.`, 'warn');
     } else {
       leaveRoom();
       renderChoice();
@@ -106,7 +107,7 @@ export function mountGeoRaceLobby(root, { levelIndex }) {
     return el('div', { className: 'race-rival' }, [
       el('span', { className: 'race-rival__avatar', text: rival.avatar, attrs: { 'aria-hidden': 'true' } }),
       el('strong', { text: rival.name }),
-      el('small', { text: '¡Lista para correr!' }),
+      el('small', { text: '¡En la sala! 🏁' }),
     ]);
   }
 
@@ -144,7 +145,7 @@ export function mountGeoRaceLobby(root, { levelIndex }) {
       [
         el('span', { className: 'race-card__emoji', text: '🤝', attrs: { 'aria-hidden': 'true' } }),
         el('h2', { className: 'setup__subtitle', text: 'Unirme a una sala' }),
-        el('p', { className: 'setup__note', text: 'Escribe el código que te dice tu amiga.' }),
+        el('p', { className: 'setup__note', text: 'Escribe el código que te compartieron.' }),
         codeInput,
         joinButton,
       ],
@@ -156,10 +157,10 @@ export function mountGeoRaceLobby(root, { levelIndex }) {
   function renderHostWaiting(code) {
     body.replaceChildren(
       el('section', { className: 'card race-card race-card--wide' }, [
-        el('h2', { className: 'setup__subtitle', text: 'Dile este código a tu amiga' }),
+        el('h2', { className: 'setup__subtitle', text: 'Comparte este código para jugar juntos' }),
         el('p', { className: 'race-code', text: code, attrs: { 'aria-label': `Código ${code.split('').join(' ')}` } }),
         el('p', { className: 'setup__note', text: levelTitle(hostConfig.levelIndex, hostConfig.speedId) }),
-        el('p', { className: 'race-lobby__waiting', text: 'Esperando a tu amiga…' }),
+        el('p', { className: 'race-lobby__waiting', text: 'Esperando a que alguien se una…' }),
         el('button', { className: 'btn btn--secondary', text: 'Cancelar', attrs: { type: 'button' }, on: { click: cancel } }),
       ]),
     );
@@ -172,7 +173,7 @@ export function mountGeoRaceLobby(root, { levelIndex }) {
     session.meta.config = { type: 'start', ...hostConfig };
     body.replaceChildren(
       el('section', { className: 'card race-card race-card--wide' }, [
-        el('h2', { className: 'setup__subtitle', text: '¡Ya llegó tu amiga!' }),
+        el('h2', { className: 'setup__subtitle', text: `¡${session.meta.rival.name} ya está aquí!` }),
         rivalCard(session.meta.rival),
         el('p', { className: 'setup__note', text: levelTitle(hostConfig.levelIndex, hostConfig.speedId) }),
         el('button', {
@@ -259,13 +260,13 @@ export function mountGeoRaceLobby(root, { levelIndex }) {
             attrs: { type: 'button', 'aria-label': 'Volver' },
             on: { click: () => navigate('/geo') },
           }),
-          el('h1', { className: 'setup__title', text: '🏁 Carrera con amiga' }),
+          el('h1', { className: 'setup__title', text: '🏁 Carrera con amigos' }),
         ]),
         body,
         status,
         el('p', {
           className: 'setup__note race-lobby__note',
-          text: 'Cada una juega en su tablet o compu, con internet. Solo se comparte tu nombre, tu avatar y tu figura.',
+          text: 'Cada quien juega en su tablet o compu, con internet. Solo se comparte tu nombre, tu avatar y tu figura.',
         }),
       ]),
     ]),

@@ -122,7 +122,7 @@ function attachConnection(current, conn) {
   emit('connect');
 }
 
-/** La anfitriona abre una sala y espera a su amiga. Devuelve el código. */
+/** La anfitriona abre una sala y espera a su rival. Devuelve el código. */
 export async function createRoom(game) {
   leaveRoom();
   const Peer = await loadPeerClass();
@@ -133,7 +133,7 @@ export async function createRoom(game) {
       const peer = await openPeer(Peer, peerId(game, code));
       const current = startSession(peer, 'host', code);
       peer.on('connection', (conn) => {
-        // Solo cabe una amiga por sala.
+        // Solo caben dos jugadores por sala.
         if (current.conn) {
           conn.on('open', () => conn.close());
           return;
@@ -212,5 +212,5 @@ export function leaveRoom() {
   setTimeout(() => current.peer.destroy(), CLOSE_DELAY_MS);
 }
 
-// Al cerrar la pestaña o la app, se avisa a la amiga para que no se quede esperando.
+// Al cerrar la pestaña o la app, se avisa a la rival para que no se quede esperando.
 window.addEventListener('pagehide', leaveRoom);

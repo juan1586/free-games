@@ -295,7 +295,7 @@ export function mountGeoSetup(root) {
           }),
           el('button', {
             className: 'btn btn--secondary btn--lg geo-playbar__race',
-            text: '🏁 Carrera con amiga',
+            text: '🏁 Carrera con amigos',
             attrs: { type: 'button' },
             on: { click: startRace },
           }),

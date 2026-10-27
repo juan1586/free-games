@@ -54,12 +54,12 @@ scripts/           check-geo-levels.mjs
 - **Cualquier cambio en niveles, física o velocidades ⇒ ejecutar `npm run check:levels`.** Comprueba cada nivel en las 3 velocidades, con y sin turbo, con decisiones cada 100 ms, y que todas las monedas son alcanzables. Tarda unos 3 minutos; `npm run check:levels -- 2-3` comprueba solo un nivel.
 - Progreso: `unlockedLevel` (índice lineal 0..14). Solo desbloquea el modo normal (a cualquier velocidad). Estrellas = niveles completados + monedas + 2 por reto. Desbloquean apariencias (`shapes.js`).
 
-### Modo carrera (2 jugadoras, cada una en su dispositivo)
+### Modo carrera (2 jugadores, cada uno en su dispositivo)
 
 - `core/race.js` es el transporte: sesión en el módulo (sobrevive al cambio de ruta sala → juego), código de 4 caracteres (id de peer `freegames-geo-<CÓDIGO>`), latido cada 2 s y mensaje `bye` al salir. El servidor público de PeerJS solo empareja; los datos van P2P.
 - Todo mensaje recibido pasa por `parseRaceMessage` (`games/geo/race.js`): nombres con `sanitizeName`, avatares de `AVATARS`, números finitos.
-- Cada una simula su partida con `physics.js` y envía su posición 15 veces/s; la rival se dibuja como fantasma. Protocolo: `hello`/`room`/`start` en la sala; `ready` → `go` (cuenta atrás) → `pos` → `finish` → `result` (lo decide la anfitriona) y `rematch`.
-- En carrera hay banderas como en práctica y no se guarda progreso de nivel ni monedas. Premio: `racesPlayed` para las dos y `raceWins` (copa 🏆) para la ganadora; retos `first-race`, `race-win`, `race-wins-3`.
+- Cada jugador simula su partida con `physics.js` y envía su posición 15 veces/s; la rival se dibuja como fantasma. Protocolo: `hello`/`room`/`start` en la sala; `ready` → `go` (cuenta atrás) → `pos` → `finish` → `result` (lo decide la anfitriona) y `rematch`.
+- En carrera hay banderas como en práctica y no se guarda progreso de nivel ni monedas. Premio: `racesPlayed` para ambos y `raceWins` (copa 🏆) para quien gana; retos `first-race`, `race-win`, `race-wins-3`.
 
 ## Añadir un juego nuevo
 
