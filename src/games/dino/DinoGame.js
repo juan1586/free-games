@@ -13,6 +13,8 @@ const VIEW_WIDTH = 800;
 const VIEW_HEIGHT = 300;
 const GROUND_Y = 252;
 const DINO_X = 70;
+const MOON_X = 470;
+const NAME_LABEL_MIN_Y = 46;
 const METERS_PER_PIXEL = 1 / 40;
 const COIN_VALUE = 10;
 const COIN_RADIUS = 9;
@@ -495,11 +497,11 @@ export class DinoGame {
       ctx.globalAlpha = night;
       ctx.fillStyle = '#fff6d6';
       ctx.beginPath();
-      ctx.arc(140, moonY, 22, 0, Math.PI * 2);
+      ctx.arc(MOON_X, moonY, 22, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = 'rgba(30, 24, 80, 0.35)';
       ctx.beginPath();
-      ctx.arc(150, moonY - 6, 18, 0, Math.PI * 2);
+      ctx.arc(MOON_X + 10, moonY - 6, 18, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
     }
@@ -598,7 +600,7 @@ export class DinoGame {
       hurt: this.status === 'over',
     });
 
-    const labelY = footY - (ducking ? 52 : 86) * this.dino.physics.scale;
+    const labelY = Math.max(NAME_LABEL_MIN_Y, footY - (ducking ? 52 : 86) * this.dino.physics.scale);
     ctx.font = '600 13px Fredoka, system-ui, sans-serif';
     ctx.textAlign = 'center';
     const labelWidth = ctx.measureText(this.dinoName).width + 14;
