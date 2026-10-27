@@ -25,7 +25,7 @@ src/core/          storage (localStorage con fallback en memoria), player (perfi
                    input (bindKeyboard, bindTouchGestures, bindHoldButton), audio (WebAudio generado,
                    createMusicLoop), gameLoop (rAF con delta y auto-pausa), canvas (setupCanvas con DPR),
                    race (salas de hasta 4 con PeerJS/WebRTC), raceMatch (lógica común de carrera),
-                   random (createRandom con semilla)
+                   random (createRandom con semilla), analytics (GoatCounter: trackPage, trackEvent)
 src/ui/            dom (el, navigate), hud (createGameHeader, createBanner), modal (showModal), menu, profile,
                    raceLobby (sala de espera común), raceResults (podio y fin de carrera)
 src/games/dino/    DinoGame, dinos (tipos y dibujo), worlds (mundos y obstáculos), setup, race, raceLobby
@@ -46,6 +46,7 @@ scripts/           check-geo-levels.mjs
 - Juegos con canvas a resolución lógica fija vía `setupCanvas`; bucle con `createGameLoop`; pausa con `P`/`Escape` y al ocultar la pestaña.
 - Controles: teclado por `event.code` con `bindKeyboard`; táctil con `bindHoldButton` (botones en `.touch-controls`, visibles solo en pantallas táctiles).
 - Sonidos y música se generan en `core/audio.js` (sin archivos de audio). Respetar `isMuted()`.
+- Estadísticas (`core/analytics.js`, GoatCounter, solo en producción): el router cuenta cada pantalla con `trackPage`; los hitos se cuentan con `trackEvent`. **Nunca enviar nombres de jugador, códigos de sala ni otros datos personales**, solo rutas y nombres de evento fijos.
 - Turbo: en Dino y Salto Geométrico, mantener `Shift` o el botón ⚡.
 
 ## Salto Geométrico (detalles importantes)

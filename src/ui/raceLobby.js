@@ -17,6 +17,7 @@ import {
   send,
 } from '../core/race.js';
 import { createHello, parsePlayer, parseRoster } from '../core/raceMatch.js';
+import { trackEvent } from '../core/analytics.js';
 
 /**
  * Sala de espera de una carrera (común a todos los juegos): crear una sala y compartir el código,
@@ -229,6 +230,7 @@ export function mountRaceLobby(root, { game, title, backPath, hostConfig, descri
     try {
       await createRoom(game);
       getSession().meta.players = [{ id: HOST_ID, ...me }];
+      trackEvent(`carrera-creada-${game}`, `Sala creada (${game})`);
       listen();
       renderHost();
     } catch (error) {
@@ -245,6 +247,7 @@ export function mountRaceLobby(root, { game, title, backPath, hostConfig, descri
     renderBusy('Buscando la sala…');
     try {
       await joinRoom(game, code);
+      trackEvent(`carrera-unida-${game}`, `Alguien se unió (${game})`);
       listen();
       send(createHello(look));
       renderGuest();
@@ -262,6 +265,7 @@ export function mountRaceLobby(root, { game, title, backPath, hostConfig, descri
     session.meta.config = hostConfig;
     send({ type: 'roster', players: session.meta.players });
     send({ type: 'start', config: hostConfig });
+    trackEvent(`carrera-empezada-${game}-${players().length}j`, `Carrera empezada (${game}, ${players().length} jugadores)`);
     goToRace(hostConfig);
   }
 

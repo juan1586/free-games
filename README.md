@@ -53,3 +53,7 @@ El workflow `.github/workflows/deploy.yml` compila y publica automáticamente en
    ```
 3. En GitHub: **Settings → Pages → Build and deployment → Source** y elige **GitHub Actions**.
 4. Revisa la pestaña **Actions**. Al terminar, el sitio estará en `https://<tu-usuario>.github.io/free-games/`.
+
+## Estadísticas de uso
+
+El sitio publicado cuenta visitas de forma anónima con [GoatCounter](https://www.goatcounter.com) (sin cookies ni datos personales). El panel está en **https://jpg1586.goatcounter.com**: pantallas más visitadas (juego, mundo o nivel), dispositivos, países y los eventos de carrera (`carrera-creada-<juego>`, `carrera-unida-<juego>`, `carrera-empezada-<juego>-<N>j`). En `npm run dev` no se envía nada.

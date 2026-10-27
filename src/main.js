@@ -17,6 +17,7 @@ import { mountGeoSetup } from './games/geo/setup.js';
 import { mountGeoGame } from './games/geo/GeoGame.js';
 import { mountGeoRaceLobby } from './games/geo/raceLobby.js';
 import { getSession, isConnected } from './core/race.js';
+import { trackPage } from './core/analytics.js';
 
 const app = document.getElementById('app');
 
@@ -61,6 +62,30 @@ const ROUTES = {
   },
 };
 
+// Nombres legibles en el panel de estadísticas.
+const PAGE_TITLES = {
+  '/': 'Menú',
+  '/perfil': 'Crear jugador',
+  '/perfil/editar': 'Editar jugador',
+  '/dino': 'Dino Corre',
+  '/dino/carrera': 'Dino · sala de carrera',
+  '/dino/jugar': 'Dino · jugando',
+  '/tetris': 'Bloques Mágicos',
+  '/tetris/jugar': 'Bloques · jugando',
+  '/geo': 'Salto Geométrico',
+  '/geo/carrera': 'Geo · sala de carrera',
+  '/geo/jugar': 'Geo · jugando',
+};
+// Solo estos parámetros llegan a las estadísticas (todos son números o banderas).
+const TRACKED_PARAMS = ['mundo', 'nivel', 'practica', 'carrera'];
+
+function trackRoute(path, query) {
+  const params = new URLSearchParams();
+  TRACKED_PARAMS.forEach((key) => query.has(key) && params.set(key, query.get(key)));
+  const search = params.toString();
+  trackPage(search ? `${path}?${search}` : path, PAGE_TITLES[path]);
+}
+
 let cleanupCurrentView = null;
 let currentPath = null;
 
@@ -96,6 +121,8 @@ function render() {
   currentPath = path;
   document.body.dataset.route = path;
   cleanupCurrentView = route(query) ?? null;
+  // Si la ruta redirigió a otra, ya se contará esa.
+  if (parseHash().path === path) trackRoute(path, query);
 }
 
 // El menú refleja al instante el cambio de jugador activo.
