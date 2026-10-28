@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import { createGameLoop } from '../../core/gameLoop.js';
-import { bindHoldButton, bindKeyboard } from '../../core/input.js';
+import { bindHoldButton, bindKeyboard, blockTouchZoom } from '../../core/input.js';
 import { createMusicLoop, sounds } from '../../core/audio.js';
 import { trackEvent } from '../../core/analytics.js';
 import { getActivePlayer, getGameData, sanitizeName, updateGameData } from '../../core/player.js';
@@ -514,7 +514,12 @@ export class ParkGame {
       ['pointercancel', up],
     ];
     events.forEach(([name, handler]) => this.canvas.addEventListener(name, handler));
-    return () => events.forEach(([name, handler]) => this.canvas.removeEventListener(name, handler));
+    // Si el dedo empieza junto al joystick (sobre el parque), tampoco debe agrandar la pantalla.
+    const unblockZoom = blockTouchZoom(this.canvas);
+    return () => {
+      unblockZoom();
+      events.forEach(([name, handler]) => this.canvas.removeEventListener(name, handler));
+    };
   }
 
   pressRideAction() {

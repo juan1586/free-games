@@ -192,5 +192,21 @@ document.addEventListener(
   { passive: false },
 );
 
+// Y el doble toque: dentro de los juegos, un segundo toque muy seguido no hace zoom
+// (salvo en el mapa y el resultado, que tienen botones normales y se deslizan).
+const DOUBLE_TAP_MS = 350;
+let lastGameTouchEnd = 0;
+document.addEventListener(
+  'touchend',
+  (event) => {
+    const target = event.target.closest?.('.stage, .touch-controls, .game-page .game-header');
+    if (!target || event.target.closest('.park-map, .park-result')) return;
+    const now = event.timeStamp;
+    if (now - lastGameTouchEnd < DOUBLE_TAP_MS && event.cancelable) event.preventDefault();
+    lastGameTouchEnd = now;
+  },
+  { passive: false },
+);
+
 window.addEventListener('hashchange', render);
 render();

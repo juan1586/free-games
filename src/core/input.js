@@ -71,6 +71,16 @@ export function bindTouchGestures(element, { onTap, onSwipe, onRelease }) {
   };
 }
 
+/**
+ * En el iPhone, Safari puede agrandar la pantalla al tocar rápido un control aunque tenga
+ * `touch-action: none`. Cancelar el `touchstart` lo evita (los eventos pointer siguen llegando).
+ */
+export function blockTouchZoom(element) {
+  const cancel = (event) => event.cancelable && event.preventDefault();
+  element.addEventListener('touchstart', cancel, { passive: false });
+  return () => element.removeEventListener('touchstart', cancel);
+}
+
 /** Botón táctil que dispara la acción al presionar y, opcionalmente, la repite mientras se mantiene. */
 export function bindHoldButton(button, { onPress, onRelease, repeatMs = 0 }) {
   let repeatTimer = null;
@@ -111,8 +121,10 @@ export function bindHoldButton(button, { onPress, onRelease, repeatMs = 0 }) {
     ['pointercancel', handleUp],
   ];
   events.forEach(([name, handler]) => button.addEventListener(name, handler));
+  const unblockZoom = blockTouchZoom(button);
   return () => {
     clearTimers();
+    unblockZoom();
     events.forEach(([name, handler]) => button.removeEventListener(name, handler));
   };
 }

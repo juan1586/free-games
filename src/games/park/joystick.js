@@ -1,4 +1,5 @@
 import { el } from '../../ui/dom.js';
+import { blockTouchZoom } from '../../core/input.js';
 
 /** Distancia máxima que se mueve la bolita, como parte del tamaño del joystick (en el celular es más pequeño). */
 const RANGE = 0.36;
@@ -58,10 +59,14 @@ export function createJoystick() {
     ['pointercancel', handleUp],
   ];
   events.forEach(([name, handler]) => element.addEventListener(name, handler));
+  const unblockZoom = blockTouchZoom(element);
   return {
     element,
     vector,
     reset,
-    destroy: () => events.forEach(([name, handler]) => element.removeEventListener(name, handler)),
+    destroy: () => {
+      unblockZoom();
+      events.forEach(([name, handler]) => element.removeEventListener(name, handler));
+    },
   };
 }
