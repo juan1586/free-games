@@ -183,5 +183,14 @@ onPlayersChange(() => {
   if (currentPath === '/' && !isRendering) render();
 });
 
+// Safari (iPhone/iPad) no respeta del todo touch-action con el pellizco: dentro de los juegos se bloquea aquí.
+document.addEventListener(
+  'gesturestart',
+  (event) => {
+    if (event.target.closest?.('.stage, .touch-controls, .game-page .game-header')) event.preventDefault();
+  },
+  { passive: false },
+);
+
 window.addEventListener('hashchange', render);
 render();

@@ -6,6 +6,8 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* Sin zoom por doble toque (al pulsar rápido un botón); el pellizco sigue en los menús. */
+  touch-action: manipulation;
 }
 
 body {
