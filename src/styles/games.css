@@ -1915,6 +1915,16 @@
   background: var(--c-white);
   box-shadow: var(--shadow-md);
   pointer-events: none;
+  transition: background 0.15s;
+}
+
+/* Joystick hasta el borde: corre. */
+.park-joystick.is-running {
+  border-color: #ffd93d;
+}
+
+.park-joystick.is-running .park-joystick__knob {
+  background: #ffd93d;
 }
 
 .park-touch .touch-btn--jump {

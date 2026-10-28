@@ -35,6 +35,8 @@ import { EMOTES, SAYINGS } from './race.js';
 
 const WALK_SPEED = 6;
 const RUN_FACTOR = 1.5;
+/** En el celular se corre empujando el joystick hasta el borde (largo del vector, de 0 a 1). */
+const JOYSTICK_RUN = 0.9;
 const JUMP_SPEED = 8.2;
 const GRAVITY = 22;
 /** Margen para saltar justo después de salir de un borde. */
@@ -605,7 +607,9 @@ export class ParkGame {
     const cos = Math.cos(this.cameraYaw);
     const dirX = -sin * forward + cos * strafe;
     const dirZ = -cos * forward - sin * strafe;
-    const speed = WALK_SPEED * (this.keys.run ? RUN_FACTOR : 1);
+    const joystickRun = Math.hypot(this.joystick.vector.x, this.joystick.vector.y) >= JOYSTICK_RUN;
+    this.joystick.element.classList.toggle('is-running', joystickRun);
+    const speed = WALK_SPEED * (this.keys.run || joystickRun ? RUN_FACTOR : 1);
     player.x += dirX * speed * delta;
     player.z += dirZ * speed * delta;
     player.speed = amount * speed;
