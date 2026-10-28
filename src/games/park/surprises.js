@@ -5,6 +5,7 @@
  * - `wizard`: el Mago del Parque propone un reto: atrapar 5 estrellas a tiempo.
  * Fallar nunca quita nada. Cada tablet tiene las suyas (no se envían a las amigas).
  * Lo que pasa se avisa con `onEvent`: { type: 'start' | 'coin' | 'status' | 'reward' | 'miss', ... }.
+ * `target(player)` dice hacia dónde hay que ir (mago, globo o la estrella más cercana) para la flecha guía.
  */
 import * as THREE from 'three';
 import { at } from './kit.js';
@@ -44,7 +45,8 @@ export function createSurprises({ kit, scene, findSpot, onEvent }) {
   const near = (position, player, radius, height = 1.6) =>
     Math.hypot(position.x - player.x, position.z - player.z) < radius && Math.abs(position.y - (player.y + 1)) < height;
 
-  const beam = (x, z, color = 0xfff2a8) => at(kit.cyl(0.6, 0.6, 30, color, 12, { opacity: 0.2, emissive: 0xffd93d }), x, 15, z);
+  // Rayo de luz que sube al cielo para encontrar la sorpresa de lejos.
+  const beam = (x, z, color = 0xfff2a8, emissive = 0xffd93d) => at(kit.cyl(0.9, 0.9, 40, color, 12, { opacity: 0.4, emissive }), x, 20, z);
 
   function coinMesh() {
     const coin = new THREE.Group();
@@ -118,17 +120,21 @@ export function createSurprises({ kit, scene, findSpot, onEvent }) {
     const ray = beam(spot.x, spot.z);
     scene.add(mesh, ray);
     onEvent({ type: 'start', kind: 'balloon', text: '🎈 ¡Un globo con regalo! Búscalo y salta para atraparlo' });
-    return { kind: 'balloon', mesh, ray, home: spot, height: mesh.position.y, time: BALLOON_SECONDS, leaving: 0, angle: 0 };
+    const balloon = { kind: 'balloon', mesh, ray, home: spot, height: mesh.position.y, time: BALLOON_SECONDS, leaving: 0, angle: 0 };
+    waitStatus(balloon, 0);
+    return balloon;
   }
 
   function startWizard(player) {
     const spot = findSpot(10, 20, player);
     if (!spot) return null;
     const mesh = at(wizardMesh(), spot.x, 0, spot.z);
-    const ray = beam(spot.x, spot.z, 0xd9c8ff);
+    const ray = beam(spot.x, spot.z, 0xc9a8ff, 0x7a4ad8);
     scene.add(mesh, ray);
     onEvent({ type: 'start', kind: 'wizard', text: '🎩 ¡Llegó el Mago del Parque! Ve a hablar con él' });
-    return { kind: 'wizard', mesh, ray, stars: [], time: WIZARD_WAIT_SECONDS, playing: false, caught: 0 };
+    const wizard = { kind: 'wizard', mesh, ray, stars: [], time: WIZARD_WAIT_SECONDS, playing: false, caught: 0 };
+    waitStatus(wizard, 0);
+    return wizard;
   }
 
   const STARTERS = { rain: startRain, balloon: startBalloon, wizard: startWizard };
@@ -144,12 +150,19 @@ export function createSurprises({ kit, scene, findSpot, onEvent }) {
     if (!current) return;
     const { coins = [], stars = [], mesh, ray } = current;
     [...coins, ...stars.map((star) => star.mesh), mesh, ray].filter(Boolean).forEach((object) => scene.remove(object));
-    if (current.kind === 'wizard' && current.playing) onEvent({ type: 'status', text: null });
+    if (current.kind !== 'rain') onEvent({ type: 'status', text: null });
     current = null;
     wait = between(WAIT);
   }
 
   // ---------- Cada cuadro ----------
+
+  /** Cuenta atrás mientras el mago o el globo esperan (solo se avisa cuando cambia el segundo). */
+  function waitStatus(surprise, delta) {
+    if (Math.ceil(surprise.time) === Math.ceil(surprise.time + delta) && delta) return;
+    const seconds = Math.ceil(surprise.time);
+    onEvent({ type: 'status', text: surprise.kind === 'wizard' ? `🎩 Te espera · ⏱️ ${seconds}` : `🎈 ¡Atrápalo! · ⏱️ ${seconds}` });
+  }
 
   function updateRain(delta, player) {
     current.time -= delta;
@@ -181,6 +194,7 @@ export function createSurprises({ kit, scene, findSpot, onEvent }) {
       return;
     }
     balloon.time -= delta;
+    waitStatus(balloon, delta);
     mesh.position.x = home.x + Math.sin(balloon.angle) * 1.2;
     mesh.position.z = home.z + Math.cos(balloon.angle) * 1.2;
     balloon.height = Math.max(BALLOON_GIFT_Y, balloon.height - delta * 4);
@@ -195,6 +209,7 @@ export function createSurprises({ kit, scene, findSpot, onEvent }) {
     }
     if (balloon.time <= 0) {
       onEvent({ type: 'miss', kind: 'balloon', text: '🎈 El globo se fue volando… ¡Saldrá otro!' });
+      onEvent({ type: 'status', text: null });
       scene.remove(balloon.ray);
       balloon.ray = null;
       balloon.leaving = 2.5;
@@ -210,6 +225,7 @@ export function createSurprises({ kit, scene, findSpot, onEvent }) {
     wizard.mesh.rotation.y = Math.atan2(player.x - wizard.mesh.position.x, player.z - wizard.mesh.position.z);
     if (!wizard.playing) {
       wizard.time -= delta;
+      waitStatus(wizard, delta);
       if (Math.hypot(player.x - wizard.mesh.position.x, player.z - wizard.mesh.position.z) < WIZARD_TALK_DISTANCE) {
         // Empieza el reto: las estrellas salen alrededor del mago.
         for (let index = 0; index < STAR_COUNT; index += 1) {
@@ -277,6 +293,25 @@ export function createSurprises({ kit, scene, findSpot, onEvent }) {
     },
     get current() {
       return current?.kind ?? null;
+    },
+    /** Hacia dónde ir: { x, y, z, icon } o null (la lluvia cae alrededor, no hace falta guía). */
+    target(player) {
+      if (current?.kind === 'balloon' && !current.leaving) {
+        const { x, y, z } = current.mesh.position;
+        return { x, y: y + 1.5, z, icon: '🎈' };
+      }
+      if (current?.kind !== 'wizard') return null;
+      if (!current.playing) {
+        const { x, z } = current.mesh.position;
+        return { x, y: 3.2, z, icon: '🎩' };
+      }
+      // Durante el reto, la estrella más cercana.
+      let best = null;
+      current.stars.forEach(({ mesh }) => {
+        const distance = Math.hypot(mesh.position.x - player.x, mesh.position.z - player.z);
+        if (!best || distance < best.distance) best = { distance, x: mesh.position.x, y: mesh.position.y + 0.6, z: mesh.position.z, icon: '⭐' };
+      });
+      return best;
     },
     dispose() {
       finish();

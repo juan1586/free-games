@@ -35,6 +35,10 @@ import { EMOTES, SAYINGS } from './race.js';
 
 const WALK_SPEED = 6;
 const RUN_FACTOR = 1.5;
+/** Flecha guía de las sorpresas: margen con los bordes (px) y altura sobre la sorpresa cuando se ve. */
+const GUIDE_MARGIN = { side: 44, top: 110, bottom: 70 };
+const GUIDE_LIFT = 46;
+const GUIDE_POINT = new THREE.Vector3();
 /** En el celular se corre empujando el joystick hasta el borde (largo del vector, de 0 a 1). */
 const JOYSTICK_RUN = 0.9;
 const JUMP_SPEED = 8.2;
@@ -369,6 +373,14 @@ export class ParkGame {
     this.mapLayer = el('div', { className: 'park-map', attrs: { hidden: true } });
     // Contador del reto del mago (estrellas y tiempo).
     this.surpriseStatus = el('div', { className: 'park-surprise-status', attrs: { hidden: true, 'aria-live': 'polite' } });
+    // Flecha guía hacia el mago, el globo o la estrella más cercana.
+    this.guideIcon = el('span', { className: 'park-guide__icon' });
+    this.guideDistance = el('span', { className: 'park-guide__distance' });
+    this.guidePointer = el('span', { className: 'park-guide__pointer', attrs: { 'aria-hidden': 'true' } });
+    this.guide = el('div', { className: 'park-guide', attrs: { hidden: true, 'aria-hidden': 'true' } }, [
+      this.guidePointer,
+      el('span', { className: 'park-guide__bubble' }, [this.guideIcon, this.guideDistance]),
+    ]);
 
     this.stage = el('div', { className: 'stage stage--park' }, [
       this.canvas,
@@ -386,6 +398,7 @@ export class ParkGame {
       touch,
       this.actionButton,
       this.surpriseStatus,
+      this.guide,
       this.resultLayer,
       this.mapLayer,
     ]);
@@ -565,6 +578,53 @@ export class ParkGame {
     }
     this.syncAvatar(delta);
     this.updateCamera(delta);
+    this.updateGuide();
+  }
+
+  /**
+   * Coloca la flecha guía: si la sorpresa se ve, una burbuja encima que la señala;
+   * si no, en el borde de la pantalla apuntando hacia ella. Con la distancia en metros.
+   */
+  updateGuide() {
+    const target = this.status === 'walk' ? this.surprises.target(this.player) : null;
+    this.guide.hidden = !target;
+    if (!target) return;
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    const point = GUIDE_POINT.set(target.x, target.y, target.z);
+    const behind = point.clone().applyMatrix4(this.camera.matrixWorldInverse).z > 0;
+    point.project(this.camera);
+    let dx = point.x * (behind ? -1 : 1);
+    let dy = -point.y * (behind ? -1 : 1);
+    const onScreen = !behind && Math.abs(dx) < 0.85 && Math.abs(dy) < 0.75;
+    // Por arriba, ni la cabecera ni la cuenta atrás de la sorpresa.
+    const status = this.surpriseStatus;
+    const top = Math.max(GUIDE_MARGIN.top, status.hidden ? 0 : status.offsetTop + status.offsetHeight + 36);
+    let x;
+    let y;
+    let angle;
+    if (onScreen) {
+      x = ((dx + 1) / 2) * width;
+      // Sin taparse con la cabecera ni salirse por los lados.
+      x = Math.min(width - GUIDE_MARGIN.side, Math.max(GUIDE_MARGIN.side, x));
+      y = Math.max(top, ((dy + 1) / 2) * height - GUIDE_LIFT);
+      angle = 90;
+    } else {
+      // Desde el centro hacia la sorpresa, hasta chocar con el borde (con margen para la cabecera y los botones).
+      if (behind && Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) dy = 1;
+      dx *= width / 2;
+      dy *= height / 2;
+      const scale = Math.min((width / 2 - GUIDE_MARGIN.side) / Math.abs(dx || 1e-6), (height / 2 - (dy < 0 ? top : GUIDE_MARGIN.bottom)) / Math.abs(dy || 1e-6));
+      x = width / 2 + dx * scale;
+      y = height / 2 + dy * scale;
+      angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+    }
+    this.guide.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    this.guidePointer.style.transform = `rotate(${Math.round(angle)}deg)`;
+    this.guide.classList.toggle('is-near', onScreen);
+    if (this.guideIcon.textContent !== target.icon) this.guideIcon.textContent = target.icon;
+    const meters = `${Math.max(1, Math.round(Math.hypot(target.x - this.player.x, target.z - this.player.z)))} m`;
+    if (this.guideDistance.textContent !== meters) this.guideDistance.textContent = meters;
   }
 
   render() {

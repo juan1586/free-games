@@ -3121,6 +3121,80 @@
   display: none;
 }
 
+/* Flecha guía hacia la sorpresa (se coloca con transform desde ParkGame). */
+.park-guide[hidden],
+.stage--park:not([data-mode='walk']) .park-guide {
+  display: none;
+}
+
+.park-guide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.park-guide__bubble {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border: 3px solid #ffd93d;
+  border-radius: 50%;
+  background: rgba(75, 51, 196, 0.9);
+  color: var(--c-white);
+  box-shadow: var(--shadow-md);
+  line-height: 1;
+  animation: park-guide-pulse 1s ease-in-out infinite;
+}
+
+.park-guide__icon {
+  font-size: 1.5rem;
+}
+
+.park-guide__distance {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* Triángulo que gira alrededor de la burbuja y señala hacia la sorpresa. */
+.park-guide__pointer {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.park-guide__pointer::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 30px;
+  border-top: 12px solid transparent;
+  border-bottom: 12px solid transparent;
+  border-left: 18px solid #ffd93d;
+}
+
+.park-guide.is-near .park-guide__bubble {
+  animation: park-guide-bounce 0.8s ease-in-out infinite;
+}
+
+@keyframes park-guide-pulse {
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes park-guide-bounce {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
 .park-surprise-status {
   position: absolute;
   top: 12px;
@@ -3131,6 +3205,7 @@
   border-radius: var(--radius-pill);
   background: rgba(75, 51, 196, 0.88);
   color: var(--c-white);
+  white-space: nowrap;
   font-size: var(--fs-lg);
   font-weight: 700;
   box-shadow: var(--shadow-md);
@@ -3175,6 +3250,12 @@
 
 /* Celular en vertical: las paradas en columna, con la vía hacia abajo. */
 @media (max-width: 700px) and (orientation: portrait) {
+  /* Debajo de la fila de misiones. */
+  .park-surprise-status {
+    top: 84px;
+    font-size: var(--fs-md);
+  }
+
   .world-map {
     --ring: 58px;
   }
