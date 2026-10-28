@@ -6,6 +6,9 @@ import { getActivePlayer, getGameData, sanitizeName, updateGameData } from '../.
 import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
+import { createStageFit } from '../../ui/stageFit.js';
+import { createRotateHint } from '../../ui/rotateHint.js';
+import { createFullscreenButton, exitFullscreen } from '../../ui/fullscreen.js';
 import { getSession, leaveRoom } from '../../core/race.js';
 import { RaceMatch } from '../../core/raceMatch.js';
 import { createRandom } from '../../core/random.js';
@@ -16,7 +19,14 @@ import { DINO_WORLDS, MEDALS, OBSTACLE_MOTIONS, OBSTACLE_SIZES, drawObstacle, me
 import { RAINBOW, getDinoTrail, getHat, isOwned } from './accessories.js';
 import { parseDinoPos } from './race.js';
 
-const VIEW_WIDTH = 800;
+/** El alto lógico es fijo; el ancho se adapta a la pantalla (ver ui/stageFit.js). */
+const MIN_VIEW_WIDTH = 800;
+const PORTRAIT_VIEW_WIDTH = 560;
+/** En un celular en horizontal se deja la vista un poco más estrecha para que el juego llene el alto. */
+const LANDSCAPE_VIEW_WIDTH = 640;
+const MAX_VIEW_WIDTH = 1200;
+/** Los obstáculos salen siempre a esta distancia, aunque la vista sea más estrecha (así la carrera es igual para todos). */
+const SPAWN_X = MAX_VIEW_WIDTH + 30;
 const VIEW_HEIGHT = 300;
 const GROUND_Y = 252;
 const DINO_X = 70;
@@ -102,10 +112,29 @@ export class DinoGame {
       });
     }
 
+    this.viewWidth = MIN_VIEW_WIDTH;
     this.buildDom(root);
-    this.ctx = setupCanvas(this.canvas, VIEW_WIDTH, VIEW_HEIGHT);
-    this.stars = Array.from({ length: 60 }, () => ({ x: random(0, VIEW_WIDTH), y: random(0, GROUND_Y - 60), r: random(0.6, 1.8), t: random(0, 6) }));
-    this.speedLines = Array.from({ length: SPEED_LINE_COUNT }, () => ({ x: random(0, VIEW_WIDTH), y: random(30, GROUND_Y - 10), length: random(40, 100) }));
+    this.stageFit = createStageFit({
+      page: this.page,
+      stage: this.stage,
+      canvas: this.canvas,
+      header: this.header.element,
+      controls: this.touchControls,
+      viewHeight: VIEW_HEIGHT,
+      minWidth: MIN_VIEW_WIDTH,
+      portraitMinWidth: PORTRAIT_VIEW_WIDTH,
+      landscapeMinWidth: LANDSCAPE_VIEW_WIDTH,
+      maxWidth: MAX_VIEW_WIDTH,
+      onChange: (viewWidth) => {
+        this.viewWidth = viewWidth;
+        this.ctx = setupCanvas(this.canvas, viewWidth, VIEW_HEIGHT);
+        if (this.loop) this.render();
+      },
+    });
+    this.ctx = setupCanvas(this.canvas, this.viewWidth, VIEW_HEIGHT);
+    this.stageFit.fit();
+    this.stars = Array.from({ length: 60 }, () => ({ x: random(0, MAX_VIEW_WIDTH), y: random(0, GROUND_Y - 60), r: random(0.6, 1.8), t: random(0, 6) }));
+    this.speedLines = Array.from({ length: SPEED_LINE_COUNT }, () => ({ x: random(0, MAX_VIEW_WIDTH), y: random(30, GROUND_Y - 10), length: random(40, 100) }));
     this.clouds = Array.from({ length: 5 }, (_, index) => ({ x: index * 190 + random(0, 80), y: random(30, 110), s: random(0.7, 1.2) }));
 
     this.loop = createGameLoop({
@@ -137,25 +166,28 @@ export class DinoGame {
       title: `${this.race ? '🏁 ' : ''}${this.world.emoji} ${this.world.name}`,
       backPath: '/dino',
       onPause: () => this.pause(),
+      extraActions: [createFullscreenButton({ landscape: true })].filter(Boolean),
       items,
     });
 
     this.canvas = el('canvas', {
       className: 'stage__canvas stage__canvas--dino',
-      attrs: { width: VIEW_WIDTH, height: VIEW_HEIGHT, 'aria-label': 'Juego del dinosaurio' },
+      attrs: { width: this.viewWidth, height: VIEW_HEIGHT, 'aria-label': 'Juego del dinosaurio' },
     });
     this.hintTitle = el('strong', { text: '¡Toca o pulsa Espacio para empezar!' });
     this.hintText = el('span', { text: '⬆️ / Espacio: saltar · ⬇️: agacharse · Shift / ⚡: turbo (¡puntos dobles!) · P: pausa' });
     this.hint = el('div', { className: 'stage__hint' }, [this.hintTitle, this.hintText]);
-    const stage = el('div', { className: `stage stage--dino world--${this.world.id}` }, [this.canvas, this.hint]);
-    this.showBanner = createBanner(stage);
+    this.stage = el('div', { className: `stage stage--dino world--${this.world.id}` }, [this.canvas, this.hint]);
+    this.showBanner = createBanner(this.stage);
 
     this.jumpButton = createTouchButton({ icon: '⬆️', label: 'Saltar', variant: 'jump' });
     this.duckButton = createTouchButton({ icon: '⬇️', label: 'Agachar', variant: 'duck' });
     this.turboButton = createTouchButton({ icon: '⚡', label: 'Turbo', variant: 'turbo' });
-    const touchControls = el('div', { className: 'touch-controls touch-controls--dino' }, [this.duckButton, this.turboButton, this.jumpButton]);
+    this.touchControls = el('div', { className: 'touch-controls touch-controls--dino' }, [this.duckButton, this.turboButton, this.jumpButton]);
 
-    root.append(el('main', { className: 'page game-page game-page--side-controls' }, [this.header.element, stage, touchControls]));
+    this.page = el('main', { className: 'page game-page game-page--runner game-page--dino' }, [this.header.element, this.stage, this.touchControls]);
+    root.append(this.page);
+    this.closeRotateHint = createRotateHint(this.page);
   }
 
   bindControls() {
@@ -394,7 +426,7 @@ export class DinoGame {
     const spawnAt = this.race ? this.nextSpawnPx : this.distancePx;
     const { specials, flyerChance = FLYER_CHANCE, doubleChance = 0, gap: [gapMin, gapMax] = DEFAULT_GAP } = this.world;
     const canFly = Math.floor(spawnAt * METERS_PER_PIXEL) >= this.world.flyersFrom;
-    const spawnX = VIEW_WIDTH + 30 - (this.distancePx - spawnAt);
+    const spawnX = SPAWN_X - (this.distancePx - spawnAt);
     const gapSpeed = this.race ? this.speedAt(spawnAt) : this.effectiveSpeed;
 
     let extraPx = 0;
@@ -907,9 +939,9 @@ export class DinoGame {
     ctx.font = '600 13px Fredoka, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    if (x < -60 || x > VIEW_WIDTH) {
+    if (x < -60 || x > this.viewWidth) {
       const isAhead = x > 0;
-      const edgeX = isAhead ? VIEW_WIDTH - 40 : 40;
+      const edgeX = isAhead ? this.viewWidth - 40 : 40;
       const edgeY = 60 + index * 34;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
       ctx.beginPath();
@@ -951,8 +983,8 @@ export class DinoGame {
     ctx.lineWidth = 10;
     ctx.strokeStyle = 'rgba(43, 33, 64, 0.4)';
     ctx.fillStyle = '#ffffff';
-    ctx.strokeText(text, VIEW_WIDTH / 2, VIEW_HEIGHT / 2 - 20);
-    ctx.fillText(text, VIEW_WIDTH / 2, VIEW_HEIGHT / 2 - 20);
+    ctx.strokeText(text, this.viewWidth / 2, VIEW_HEIGHT / 2 - 20);
+    ctx.fillText(text, this.viewWidth / 2, VIEW_HEIGHT / 2 - 20);
     ctx.textAlign = 'start';
     ctx.textBaseline = 'alphabetic';
   }
@@ -985,7 +1017,7 @@ export class DinoGame {
     const colors = ['#ff5fa2', '#ffd93d', '#4dd4ac', '#5ab0ff', '#b57bff'];
     for (let index = 0; index < 70; index += 1) {
       this.confetti.push({
-        x: random(0, VIEW_WIDTH),
+        x: random(0, this.viewWidth),
         y: random(-120, -10),
         vx: random(-40, 40),
         vy: random(80, 180),
@@ -1034,7 +1066,7 @@ export class DinoGame {
     sky.addColorStop(0, palette.skyTop);
     sky.addColorStop(1, palette.skyBottom);
     ctx.fillStyle = sky;
-    ctx.fillRect(-10, -10, VIEW_WIDTH + 20, GROUND_Y + 10);
+    ctx.fillRect(-10, -10, this.viewWidth + 20, GROUND_Y + 10);
 
     this.drawSunAndMoon(night);
     if (!this.world.alwaysNight && !this.world.noClouds) this.drawClouds();
@@ -1043,7 +1075,7 @@ export class DinoGame {
 
     if (night > 0 && !this.world.alwaysNight) {
       ctx.fillStyle = `rgba(20, 16, 60, ${night * 0.55})`;
-      ctx.fillRect(-10, -10, VIEW_WIDTH + 20, GROUND_Y + 10);
+      ctx.fillRect(-10, -10, this.viewWidth + 20, GROUND_Y + 10);
     }
     if (night > 0.3) this.drawStars(night);
 
@@ -1097,7 +1129,7 @@ export class DinoGame {
     const ctx = this.ctx;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
     this.clouds.forEach((cloud) => {
-      const span = VIEW_WIDTH + 200;
+      const span = this.viewWidth + 200;
       const x = ((((cloud.x - this.distancePx * 0.08) % span) + span) % span) - 100;
       ctx.beginPath();
       ctx.arc(x, cloud.y, 16 * cloud.s, 0, Math.PI * 2);
@@ -1113,12 +1145,12 @@ export class DinoGame {
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(0, GROUND_Y);
-    for (let x = 0; x <= VIEW_WIDTH; x += 10) {
+    for (let x = 0; x <= this.viewWidth; x += 10) {
       const worldX = x + offset;
       const wave = Math.sin(worldX * frequency) * 0.6 + Math.sin(worldX * frequency * 2.3 + 1.7) * 0.4;
       ctx.lineTo(x, GROUND_Y - baseLift - (wave + 1) * amplitude * 0.5);
     }
-    ctx.lineTo(VIEW_WIDTH, GROUND_Y);
+    ctx.lineTo(this.viewWidth, GROUND_Y);
     ctx.closePath();
     ctx.fill();
   }
@@ -1139,12 +1171,12 @@ export class DinoGame {
     const ctx = this.ctx;
     const { palette } = this.world;
     ctx.fillStyle = palette.ground;
-    ctx.fillRect(-10, GROUND_Y, VIEW_WIDTH + 20, VIEW_HEIGHT - GROUND_Y + 10);
+    ctx.fillRect(-10, GROUND_Y, this.viewWidth + 20, VIEW_HEIGHT - GROUND_Y + 10);
     ctx.fillStyle = palette.groundDetail;
-    ctx.fillRect(-10, GROUND_Y, VIEW_WIDTH + 20, 3);
+    ctx.fillRect(-10, GROUND_Y, this.viewWidth + 20, 3);
     const spacing = 46;
     const offset = this.distancePx % spacing;
-    for (let x = -offset; x < VIEW_WIDTH; x += spacing) {
+    for (let x = -offset; x < this.viewWidth; x += spacing) {
       const row = Math.floor((x + this.distancePx) / spacing) % 3;
       ctx.fillRect(x, GROUND_Y + 12 + row * 10, 14 - row * 3, 3);
     }
@@ -1306,8 +1338,8 @@ export class DinoGame {
     ctx.lineCap = 'round';
     ctx.beginPath();
     this.speedLines.forEach((line) => {
-      const span = VIEW_WIDTH + line.length;
-      const x = VIEW_WIDTH - ((((line.x + shift) % span) + span) % span);
+      const span = this.viewWidth + line.length;
+      const x = this.viewWidth - ((((line.x + shift) % span) + span) % span);
       ctx.moveTo(x, line.y);
       ctx.lineTo(x + line.length, line.y);
     });
@@ -1409,7 +1441,7 @@ export class DinoGame {
       const seed = index * 97.13;
       const fall = kind === 'embers' || kind === 'bubbles' ? -1 : 1;
       const speedY = 20 + (seed % 30);
-      const x = (((seed * 7 - this.distancePx * (kind === 'leaves' ? 0.6 : 0.3) + Math.sin(this.time + seed) * 20) % VIEW_WIDTH) + VIEW_WIDTH) % VIEW_WIDTH;
+      const x = (((seed * 7 - this.distancePx * (kind === 'leaves' ? 0.6 : 0.3) + Math.sin(this.time + seed) * 20) % this.viewWidth) + this.viewWidth) % this.viewWidth;
       const y = (((seed * 3 + fall * this.time * speedY) % VIEW_HEIGHT) + VIEW_HEIGHT) % VIEW_HEIGHT;
       if (kind === 'snow') {
         ctx.fillStyle = 'rgba(255,255,255,0.9)';
@@ -1458,7 +1490,7 @@ export class DinoGame {
     const ctx = this.ctx;
     const trackX = 20;
     const trackY = 16;
-    const trackWidth = VIEW_WIDTH - 40;
+    const trackWidth = this.viewWidth - 40;
     const progress = this.myProgress;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
     ctx.beginPath();
@@ -1512,6 +1544,9 @@ export class DinoGame {
     closeModal();
     this.loop.destroy();
     this.unbinders.forEach((unbind) => unbind());
+    this.stageFit.destroy();
+    this.closeRotateHint();
+    exitFullscreen();
   }
 }
 

@@ -15,15 +15,17 @@ import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.
 import { closeModal, showModal } from '../../ui/modal.js';
 import { syncStickers } from '../../album/stickers.js';
 import { at, createKit } from './kit.js';
+import { canFullscreen, exitFullscreen, toggleFullscreen } from '../../ui/fullscreen.js';
 import { createAvatar } from './avatar.js';
-import { currentOutfit } from './outfits.js';
-import { PARK_RADIUS, SPAWN } from './parkBase.js';
+import { SECRET_KEY_COUNT, currentOutfit } from './outfits.js';
+import { createPet } from './pet.js';
+import { PARK_RADIUS, SPAWN, STATION, STATION_PROMPT_DISTANCE } from './parkBase.js';
 import { buildPark } from './parks.js';
 import { PERSON_RADIUS, createCrowd } from './crowd.js';
 import { groundHeight, isBlocked, resolveCollisions } from './collision.js';
 import { MAX_QUEUE, slotPosition, waitSeconds } from './queue.js';
 import { ALL_MISSIONS_BONUS, MISSION_COINS, describeMissions, recordMission, todaysMissions } from './missions.js';
-import { FIRST_RIDE_BONUS, PARK_WORLDS, SNITCH_COINS, WELCOME_COINS, getRide, isWorldOpen } from './worlds.js';
+import { FIRST_RIDE_BONUS, KEY_COINS, PARK_WORLDS, SECRET_KEY_SPOT, SNITCH_COINS, WELCOME_COINS, getRide, isWorldOpen } from './worlds.js';
 import { RIDE_FACTORIES } from './rides/index.js';
 import { createJoystick } from './joystick.js';
 import { createFriends } from './friends.js';
@@ -74,6 +76,8 @@ const FRIENDS_PANEL_EVERY = 0.3;
 const RIDE_STATE_EVERY = 0.1;
 /** Si dos amigas suben a la vez, se sigue a la de id menor si llega en este tiempo (ms). */
 const BOARD_MERGE_MS = 2500;
+/** Lo que tarda el «chu chu» antes de llegar al otro parque (ms). */
+const TRAVEL_DELAY_MS = 900;
 /** Semilla fija: el parque se ve siempre igual (mismas palmas, mismo cafetal). */
 const PARK_LAYOUT_SEED = 2024;
 
@@ -155,6 +159,7 @@ export class ParkGame {
     const data = getGameData('park');
     this.look = currentOutfit(data);
     this.avatar = createAvatar(this.kit, this.look);
+    this.pet = createPet(this.kit, this.scene, this.look.pet.kind);
     const name = sanitizeName(getActivePlayer()?.name) || 'Yo';
     const nameTag = this.kit.label(name, { background: '#ff5fa2', color: '#ffffff', height: 0.45 });
     nameTag.sprite.position.y = 2.95;
@@ -207,6 +212,7 @@ export class ParkGame {
     this.refreshHud();
     this.refreshMissions();
     this.welcome();
+    if (this.secretKey) this.notify('🗝️ ¡Hay una llave secreta brillando en la plaza!');
     this.startFriends();
     this.loop.start();
     this.music.start();
@@ -222,14 +228,25 @@ export class ParkGame {
       on: { click: (event) => this.handleButton(event, () => this.cycleCamera()) },
     });
     const extraActions = [this.cameraButton];
+    // Viajar a otro parque (con amigas, el parque lo elige la sala).
+    if (!this.withFriends) {
+      extraActions.push(
+        el('button', {
+          className: 'icon-btn park-travel-button',
+          text: '🗺️',
+          attrs: { type: 'button', 'aria-label': 'Viajar a otro parque', title: 'Viajar a otro parque' },
+          on: { click: (event) => this.handleButton(event, () => this.openTravel()) },
+        }),
+      );
+    }
     // Pantalla completa (en Android quita las barras del navegador; el iPhone no la tiene).
-    if (document.fullscreenEnabled) {
+    if (canFullscreen()) {
       extraActions.push(
         el('button', {
           className: 'icon-btn park-fullscreen-button',
           text: '⛶',
           attrs: { type: 'button', 'aria-label': 'Pantalla completa', title: 'Pantalla completa' },
-          on: { click: (event) => this.handleButton(event, () => this.toggleFullscreen()) },
+          on: { click: (event) => this.handleButton(event, () => toggleFullscreen()) },
         }),
       );
     }
@@ -638,6 +655,7 @@ export class ParkGame {
     const ground = groundHeight(this.park.colliders, player.x, player.z, player.y);
     avatar.shadow.position.set(player.x, ground + 0.03, player.z);
     avatar.update(delta, { speed: player.speed, airborne: !player.onGround && player.airTime > COYOTE_SECONDS });
+    this.pet?.update(delta, { x: player.x, y: ground, z: player.z, visible: avatar.root.visible });
   }
 
   updateCamera(delta) {
@@ -688,11 +706,7 @@ export class ParkGame {
     const visible = this.status !== 'ride' && this.cameraMode.id !== 'first';
     this.avatar.root.visible = visible;
     this.avatar.shadow.visible = visible;
-  }
-
-  toggleFullscreen() {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    else document.documentElement.requestFullscreen?.().catch(() => {});
+    if (!visible) this.pet?.update(0, { ...this.player, visible: false });
   }
 
   // ---------- Monedas y granos dorados ----------
@@ -739,6 +753,51 @@ export class ParkGame {
       this.scene.add(mesh);
       return { bean, mesh, halo };
     });
+    this.buildSecretKey();
+  }
+
+  /** La llave secreta del parque: sale cuando ya están todos sus tesoros (y aún no se tiene). */
+  buildSecretKey() {
+    const data = getGameData('park');
+    const found = (data[this.treasure.key] ?? []).length;
+    if (this.secretKey || found < this.treasure.items.length || (data.keys ?? []).includes(this.world.id)) return false;
+    const { x, y, z } = SECRET_KEY_SPOT;
+    const mesh = at(new THREE.Group(), x, y, z);
+    const gold = { emissive: 0x6a4a00 };
+    const ring = this.kit.torus(0.28, 0.08, 0xffd21f, gold);
+    ring.position.y = 0.35;
+    mesh.add(ring, at(this.kit.box(0.1, 0.8, 0.1, 0xffd21f, gold), 0, -0.25, 0));
+    [-0.45, -0.6].forEach((ty) => mesh.add(at(this.kit.box(0.22, 0.08, 0.08, 0xffd21f, gold), 0.1, ty, 0)));
+    const beam = at(this.kit.cyl(0.7, 0.7, 30, 0xfff2a8, 12, { opacity: 0.22, emissive: 0xffd93d }), x, 15, z);
+    this.scene.add(mesh, beam);
+    this.secretKey = { mesh, beam };
+    return true;
+  }
+
+  collectSecretKey() {
+    const { mesh, beam } = this.secretKey;
+    this.scene.remove(mesh, beam);
+    this.secretKey = null;
+    const data = getGameData('park');
+    const keys = [...(data.keys ?? []), this.world.id];
+    const allKeys = keys.length >= SECRET_KEY_COUNT;
+    // Con todas las llaves se abre el cofre: la mascota se pone sola.
+    updateGameData('park', { keys, coins: data.coins + KEY_COINS, ...(allKeys ? { outfit: { ...data.outfit, pet: 'pet-unicorn' } } : {}) });
+    sounds.achievement();
+    this.notify(`🗝️ ¡Llave secreta! ${keys.length}/${SECRET_KEY_COUNT} · +${KEY_COINS} 🪙`);
+    this.notify('✨ En el vestidor se abrió ropa secreta');
+    this.friends?.say('key');
+    trackEvent(`parque-llave-${this.world.id}`, `Parque · llave secreta de ${this.world.name}`);
+    if (allKeys) {
+      this.notify('🎁 ¡Abriste el Cofre de las Llaves! 🦄 Un unicornio bebé te acompaña');
+      trackEvent('parque-mascota', 'Parque · cofre de las llaves');
+      if (!this.pet) {
+        this.look = currentOutfit(getGameData('park'));
+        this.pet = createPet(this.kit, this.scene, this.look.pet.kind);
+      }
+    }
+    this.refreshHud();
+    this.checkStickers();
   }
 
   animatePickups(delta) {
@@ -750,6 +809,10 @@ export class ParkGame {
       }
       entry.mesh.rotation.y += delta * 3;
     });
+    if (this.secretKey) {
+      this.secretKey.mesh.rotation.y += delta * 2;
+      this.secretKey.mesh.position.y = SECRET_KEY_SPOT.y + Math.sin(performance.now() / 300) * 0.2;
+    }
     this.beans.forEach(({ bean, mesh, halo }) => {
       mesh.rotation.y += delta * 1.5;
       mesh.position.y = bean.y + Math.sin(performance.now() / 400) * 0.15;
@@ -785,8 +848,10 @@ export class ParkGame {
       this.progress('bean');
       this.refreshHud();
       this.checkStickers();
+      if (this.buildSecretKey()) this.notify('🗝️ ¡Apareció una llave secreta en la plaza!');
       return false;
     });
+    if (this.secretKey && near(this.secretKey.mesh.position, PICK_RADIUS + 0.2)) this.collectSecretKey();
   }
 
   addCoins(amount) {
@@ -815,11 +880,12 @@ export class ParkGame {
   updatePrompt() {
     const ride = this.nearestQueue();
     this.promptRide = ride;
-    this.promptButton.hidden = !ride;
-    if (!ride) return;
-    const people = this.crowd.getQueue(ride.id).people.length;
-    const text = `${ride.emoji} Hacer fila: ${ride.name} · 👥 ${people}  (E)`;
-    if (this.promptButton.textContent !== text) this.promptButton.textContent = text;
+    this.promptStation = !ride && Math.hypot(this.player.x - STATION.x, this.player.z - STATION.z) < STATION_PROMPT_DISTANCE;
+    this.promptButton.hidden = !ride && !this.promptStation;
+    let text = '';
+    if (ride) text = `${ride.emoji} Hacer fila: ${ride.name} · 👥 ${this.crowd.getQueue(ride.id).people.length}  (E)`;
+    else if (this.promptStation) text = '🚂 Viajar a otro parque  (E)';
+    if (text && this.promptButton.textContent !== text) this.promptButton.textContent = text;
   }
 
   interact() {
@@ -827,8 +893,37 @@ export class ParkGame {
       if (this.cutter) this.snitch();
       return;
     }
-    if (this.status !== 'walk' || !this.promptRide) return;
-    this.joinQueue(this.promptRide);
+    if (this.status !== 'walk') return;
+    if (this.promptRide) this.joinQueue(this.promptRide);
+    else if (this.promptStation) this.openTravel();
+  }
+
+  // ---------- Viajar a otro parque ----------
+
+  /** El tren 🚂: elige a qué parque ir (los cerrados dicen cómo se abren). */
+  openTravel() {
+    if (this.withFriends) {
+      this.notify('👭 Con amigas, el parque se elige en la sala');
+      return;
+    }
+    if (this.status !== 'walk' && this.status !== 'result') {
+      this.notify('🚂 Primero termina lo que estás haciendo');
+      return;
+    }
+    if (this.status === 'result') this.closeResult(true);
+    this.pause({ travel: true });
+  }
+
+  travelTo(index) {
+    const world = PARK_WORLDS[index];
+    if (!world || world === this.world) return;
+    updateGameData('park', { lastWorld: index });
+    sounds.levelUp();
+    this.showBanner(`🚂 ¡Chu chu! Vamos a ${world.emoji} ${world.name}`, TRAVEL_DELAY_MS + 400);
+    trackEvent(`parque-viaje-${world.id}`, `Parque · viaje a ${world.name}`);
+    // En pantalla completa se sigue en pantalla completa al llegar.
+    this.keepFullscreen = true;
+    this.timers.push(setTimeout(() => navigate(`/parque/jugar?mundo=${index}`), TRAVEL_DELAY_MS));
   }
 
   joinQueue(ride) {
@@ -1067,10 +1162,12 @@ export class ParkGame {
       ridesDone: { ...data.ridesDone, [ride.id]: (data.ridesDone[ride.id] ?? 0) + 1 },
       totalRides: data.totalRides + 1,
     });
-    // ¿Este viaje abrió un parque nuevo?
+    // ¿Este viaje abrió un parque nuevo? (en el resultado sale el botón para ir en tren)
+    this.newWorldIndex = null;
     PARK_WORLDS.forEach((world, index) => {
       if (wasOpen[index] || !isWorldOpen(world, getGameData('park'))) return;
-      this.notify(`🗺️ ¡Abriste ${world.emoji} ${world.name}! Búscalo al salir del parque`);
+      this.newWorldIndex = index;
+      this.notify(`🗺️ ¡Abriste ${world.emoji} ${world.name}! Ve en el tren 🚂`);
       trackEvent(`parque-abre-${world.id}`, `Parque · abre ${world.name}`);
     });
     this.progress('ride');
@@ -1146,9 +1243,27 @@ export class ParkGame {
         stats.map(({ label, value }) => el('div', { className: 'modal__stat' }, [el('dt', { text: label }), el('dd', { text: value })])),
       ),
       closeButton,
-    ]);
+      this.newWorldIndex != null && !this.withFriends ? this.travelButton(this.newWorldIndex) : null,
+    ].filter(Boolean));
     this.resultLayer.replaceChildren(card);
     this.resultShownAt = performance.now();
+  }
+
+  /** Botón para ir en tren al parque que se acaba de abrir. */
+  travelButton(index) {
+    const world = PARK_WORLDS[index];
+    return el('button', {
+      className: 'btn btn--play btn--lg',
+      text: `🚂 ¡Ir a ${world.emoji} ${world.name}!`,
+      attrs: { type: 'button' },
+      on: {
+        click: (event) =>
+          this.handleButton(event, () => {
+            this.closeResult(true);
+            this.travelTo(index);
+          }),
+      },
+    });
   }
 
   closeResult(force = false) {
@@ -1373,7 +1488,7 @@ export class ParkGame {
 
   // ---------- Pausa y salida ----------
 
-  pause({ exitRide = false } = {}) {
+  pause({ exitRide = false, travel = false } = {}) {
     if (this.status === 'paused' || !this.loop) return;
     this.pausedFrom = this.status;
     this.status = 'paused';
@@ -1392,6 +1507,39 @@ export class ParkGame {
         actions: [
           { label: 'Seguir montando ▶', variant: 'primary', onClick: () => this.resume() },
           { label: '🚪 Bajarme', onClick: () => this.resumeAndExitRide() },
+        ],
+      });
+      return;
+    }
+    if (travel) {
+      const data = getGameData('park');
+      showModal({
+        emoji: '🚂',
+        title: '¿A qué parque vamos?',
+        message: 'Los parques con 🔒 se abren montando en todas las atracciones del anterior.',
+        escapeIndex: PARK_WORLDS.length,
+        actions: [
+          ...PARK_WORLDS.map((world, index) => {
+            if (world === this.world) return { label: `📍 ${world.emoji} ${world.name} (estás aquí)`, onClick: () => this.resume() };
+            if (!isWorldOpen(world, data)) {
+              return {
+                label: `🔒 ${world.name}`,
+                onClick: () => {
+                  this.resume();
+                  this.notify(`🔒 ${world.unlock.hint}`);
+                },
+              };
+            }
+            return {
+              label: `${world.emoji} ${world.name}`,
+              variant: 'primary',
+              onClick: () => {
+                this.resume();
+                this.travelTo(index);
+              },
+            };
+          }),
+          { label: 'Seguir aquí ▶', onClick: () => this.resume() },
         ],
       });
       return;
@@ -1429,7 +1577,7 @@ export class ParkGame {
   destroy() {
     this.timers.forEach((timer) => clearTimeout(timer));
     closeModal();
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (!this.keepFullscreen) exitFullscreen();
     if (!this.loop) {
       this.kit.dispose();
       this.renderer?.dispose();

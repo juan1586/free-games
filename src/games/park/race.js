@@ -45,6 +45,7 @@ export const SAYINGS = {
   butterfly: { text: '🦋 ¡Una mariposa!' },
   fruit: { text: '🍌 ¡Una fruta!' },
   song: { text: '🎶 ¡La canté!' },
+  key: { text: '🗝️ ¡Una llave secreta!' },
   ring: { text: '🍭 ¡Un aro!' },
   candy: { text: '🍬 ¡Dulces!' },
   cake: { text: '🎂 ¡Qué pastel!' },

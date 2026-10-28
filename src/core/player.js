@@ -47,6 +47,7 @@ const createDefaultGames = () => ({
     goldenShells: [],
     goldenFrogs: [],
     goldenCandies: [],
+    keys: [],
     lastWorld: 0,
     camera: 'normal',
     missions: { day: '', list: [] },

@@ -330,6 +330,13 @@ export const getWorldOfRide = (rideId) => PARK_WORLDS.find((world) => world.ride
 /** Mundos que vendrán (se muestran como «próximamente» en la pantalla previa). */
 export const UPCOMING_WORLDS = [];
 
+/**
+ * Llave secreta 🗝️ de cada parque: aparece aquí (delante de la plaza) cuando ya se encontraron todos
+ * sus tesoros dorados. Se guarda el id del parque en `park.keys` y abre ropa secreta (outfits.js).
+ */
+export const SECRET_KEY_SPOT = { x: 0, y: 1.4, z: 9 };
+export const KEY_COINS = 30;
+
 /** Monedas de bienvenida la primera vez que se entra al parque. */
 export const WELCOME_COINS = 30;
 /** Extra la primera vez que se monta cada atracción. */

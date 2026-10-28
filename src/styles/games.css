@@ -971,24 +971,158 @@
   box-shadow: var(--shadow-lg);
 }
 
-/* El ancho lógico (y con él aspect-ratio) lo ajusta GeoGame.fitCanvas según la pantalla. */
+/* El ancho lógico (y con él aspect-ratio) lo ajusta ui/stageFit.js según la pantalla. */
 .stage__canvas--geo {
   aspect-ratio: 800 / 400;
 }
 
-/* Celular en horizontal (Dino y Salto Geométrico): cabecera en una sola línea para dejar sitio al juego. */
-@media (orientation: landscape) and (max-height: 520px) {
-  .game-page--side-controls {
-    gap: 6px;
-    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
+/* ---------- Juegos de correr (Dino y Salto Geométrico) en cualquier pantalla ---------- */
+
+/*
+ * Celular en horizontal: el juego ocupa toda la pantalla (sin márgenes ni bordes), la cabecera flota
+ * encima del cielo y los botones van en una barra abajo (encima del juego taparían el suelo y los
+ * obstáculos). El tamaño del lienzo lo pone ui/stageFit.js.
+ */
+@media (orientation: landscape) and (max-height: 560px) {
+  .game-page--runner {
+    --safe-top: max(6px, env(safe-area-inset-top));
+    --safe-right: max(10px, env(safe-area-inset-right));
+    --safe-bottom: max(8px, env(safe-area-inset-bottom));
+    --safe-left: max(10px, env(safe-area-inset-left));
+    position: relative;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    padding: 0;
+    overflow: hidden;
+    background: #241a3d;
   }
 
-  .game-page--side-controls .game-header {
+  .game-page--runner .stage {
+    display: grid;
+    place-items: end center;
+    height: 100%;
+    overflow: hidden;
+    width: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #241a3d;
+  }
+
+  .game-page--runner .game-header {
+    position: absolute;
+    z-index: 6;
+    top: var(--safe-top);
+    left: var(--safe-left);
+    right: var(--safe-right);
+    width: auto;
     flex-wrap: nowrap;
+    gap: 6px;
+    pointer-events: none;
+  }
+
+  .game-page--runner .game-header > * {
+    pointer-events: auto;
+  }
+
+  .game-page--runner .game-header__title {
+    display: none;
+  }
+
+  .game-page--runner .hud {
+    flex-wrap: nowrap;
+    order: 0;
+    width: auto;
+    margin-left: 0;
+    gap: 6px;
+  }
+
+  .game-page--runner .hud__label {
+    display: none;
+  }
+
+  .game-page--runner .hud__item {
+    gap: 4px;
+    padding: 3px 10px;
+    background: rgba(255, 255, 255, 0.88);
+  }
+
+  .game-page--runner .hud__value {
+    font-size: var(--fs-md);
+  }
+
+  .game-page--runner .game-header__actions {
+    margin-left: auto;
+  }
+
+  .game-page--runner .icon-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 1.1rem;
+  }
+
+  .game-page--runner .touch-controls {
+    width: 100%;
+    margin: 0;
+    gap: 10px;
+    padding: 8px var(--safe-right) var(--safe-bottom) var(--safe-left);
+  }
+
+  .game-page--runner .touch-controls .touch-btn {
+    flex: 0 1 150px;
+    flex-direction: row;
+    gap: 6px;
+    min-width: 0;
+    height: 58px;
+    padding: 0 12px;
+    border-radius: 20px;
+  }
+
+  .game-page--runner .touch-controls .touch-btn__icon {
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+
+  .game-page--runner .touch-controls .touch-btn__label {
+    font-size: 1rem;
+  }
+
+  /* Saltar, ancho y a la derecha (pulgar derecho); lo demás a la izquierda. */
+  .game-page--runner .touch-controls .touch-btn--jump {
+    flex: 0 1 260px;
+    order: 3;
+    margin-left: auto;
+  }
+
+  .game-page--runner .banner {
+    top: 30%;
+    font-size: var(--fs-lg);
+  }
+}
+
+/* Celular o tablet en vertical: cabecera compacta, el juego en el centro y botones grandes abajo. */
+@media (orientation: portrait) and (max-width: 900px) {
+  .game-page--runner {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-content: stretch;
+    min-height: 100dvh;
+    gap: 10px;
+    padding: max(10px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom));
+  }
+
+  /* Cabecera en dos filas: volver y botones arriba, marcadores debajo. */
+  .game-page--runner .game-header {
     gap: 8px;
   }
 
-  .game-page--side-controls .game-header__title {
+  .game-page--runner .game-header__title {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     font-size: var(--fs-md);
@@ -996,7 +1130,81 @@
     text-overflow: ellipsis;
   }
 
-  .game-page--side-controls .hud {
+  .game-page--runner .game-header__actions {
+    margin-left: 0;
+    gap: 6px;
+  }
+
+  .game-page--runner .icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 13px;
+    font-size: 1.1rem;
+  }
+
+  .game-page--runner .hud {
+    flex-wrap: nowrap;
+    order: 3;
+    width: 100%;
+    gap: 6px;
+  }
+
+  .game-page--runner .hud__item {
+    flex: 1 1 0;
+    justify-content: center;
+    min-width: 0;
+    padding: 4px 6px;
+  }
+
+  .game-page--runner .hud__value {
+    font-size: var(--fs-md);
+  }
+
+  .game-page--runner .stage {
+    align-self: center;
+    border-width: 3px;
+    border-radius: var(--radius-md);
+  }
+
+  .game-page--runner .touch-controls .touch-btn {
+    height: clamp(84px, 14dvh, 120px);
+    border-radius: 24px;
+  }
+
+  .game-page--runner .touch-controls .touch-btn__icon {
+    font-size: 1.8rem;
+  }
+}
+
+/*
+ * Bloques Mágicos en un celular en horizontal: el tablero en el centro, todo lo alto, y los botones a
+ * los lados (mover a la izquierda, soltar y girar a la derecha). La cabecera, en una sola línea.
+ */
+@media (orientation: landscape) and (max-height: 560px) {
+  .game-page--tetris {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: stretch;
+    height: 100dvh;
+    gap: 6px 12px;
+    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .game-page--tetris .game-header {
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .game-page--tetris .game-header__title {
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--fs-md);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .game-page--tetris .hud {
     flex-wrap: nowrap;
     order: 0;
     width: auto;
@@ -1004,109 +1212,127 @@
     gap: 6px;
   }
 
-  .game-page--side-controls .hud__label {
+  .game-page--tetris .hud__label {
     display: none;
   }
 
-  .game-page--side-controls .hud__item {
+  .game-page--tetris .hud__item {
     gap: 4px;
     padding: 3px 9px;
   }
 
-  .game-page--side-controls .hud__value {
+  .game-page--tetris .hud__value {
     font-size: var(--fs-md);
   }
 
-  .game-page--side-controls .game-header__actions {
+  .game-page--tetris .game-header__actions {
     margin-left: 0;
   }
 
-  .game-page--side-controls .icon-btn {
+  .game-page--tetris .icon-btn {
     width: 38px;
     height: 38px;
     border-radius: 12px;
     font-size: 1.1rem;
   }
 
-  .game-page--side-controls .stage {
-    border-width: 3px;
-    border-radius: var(--radius-md);
-  }
-}
-
-/*
- * Celular táctil en horizontal: el juego en el centro y los botones a los lados, al alcance
- * de los pulgares (turbo y agachar a la izquierda, saltar a la derecha). Todo cabe sin hacer scroll.
- */
-@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
-  .game-page--side-controls {
-    --rail-width: clamp(76px, 11vw, 96px);
-    grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--rail-width);
-    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
-    align-content: stretch;
-    height: 100dvh;
-    column-gap: 10px;
-    row-gap: 8px;
-  }
-
-  .game-page--side-controls .game-header {
-    grid-column: 1 / -1;
-  }
-
-  .game-page--side-controls .stage {
+  .game-page--tetris .tetris-layout {
     grid-column: 2;
-    grid-row: 2 / 4;
-    align-self: center;
-    width: 100%;
+    grid-row: 2;
+    min-height: 0;
   }
 
-  .game-page--side-controls .touch-controls {
+  .game-page--tetris .stage__canvas--tetris {
+    height: calc(100dvh - 64px);
+    max-width: none;
+  }
+
+  .game-page--tetris .touch-controls {
     display: contents;
   }
 
-  .game-page--side-controls .touch-btn {
-    flex-direction: column;
-    gap: 2px;
-    width: 100%;
-    min-width: 0;
-    height: min(100%, 190px);
-    padding: 8px 4px;
-    border-radius: 26px;
-    align-self: center;
-  }
-
-  .game-page--side-controls .touch-btn__icon {
-    font-size: 1.9rem;
-    line-height: 1;
-  }
-
-  .game-page--side-controls .touch-btn__label {
-    font-size: 0.9rem;
-  }
-
-  .game-page--side-controls .touch-btn--turbo,
-  .game-page--side-controls .touch-btn--duck {
-    grid-column: 1;
-    grid-row: 2 / 4;
-  }
-
-  .game-page--side-controls .touch-btn--jump {
-    grid-column: 3;
-    grid-row: 2 / 4;
-    height: min(100%, 230px);
-  }
-
-  /* Dino tiene dos botones a la izquierda: turbo arriba y agachar abajo, juntos en el centro. */
-  .touch-controls--dino .touch-btn--turbo {
+  .game-page--tetris .touch-controls__group {
     grid-row: 2;
-    align-self: end;
-    height: min(100%, 130px);
+    flex-wrap: wrap;
+    align-content: center;
+    justify-content: center;
+    gap: 10px;
   }
 
-  .touch-controls--dino .touch-btn--duck {
-    grid-row: 3;
-    align-self: start;
-    height: min(100%, 130px);
+  .game-page--tetris .touch-controls__group:first-child {
+    grid-column: 1;
+  }
+
+  .game-page--tetris .touch-controls__group:last-child {
+    grid-column: 3;
+  }
+
+  .game-page--tetris .touch-btn {
+    width: 72px;
+    min-width: 0;
+    height: 72px;
+    padding: 0;
+  }
+}
+
+/* Aviso «gira el celular» (ui/rotateHint.js). */
+.rotate-hint {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(36, 26, 61, 0.86);
+  color: var(--c-white);
+  text-align: center;
+  animation: page-in 0.3s var(--ease-out);
+}
+
+.rotate-hint__phone {
+  font-size: 4.5rem;
+  animation: rotate-phone 2.2s var(--ease-out) infinite;
+}
+
+.rotate-hint__title {
+  font-size: var(--fs-xl);
+}
+
+.rotate-hint__text {
+  max-width: 280px;
+  margin: 0;
+  font-size: var(--fs-md);
+  opacity: 0.9;
+}
+
+.rotate-hint__actions {
+  display: grid;
+  gap: 10px;
+  width: min(260px, 100%);
+  margin-top: 8px;
+}
+
+@keyframes rotate-phone {
+  0%,
+  25% {
+    transform: rotate(0deg);
+  }
+
+  55%,
+  85% {
+    transform: rotate(-90deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-hint__phone {
+    animation: none;
   }
 }
 

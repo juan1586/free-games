@@ -63,7 +63,7 @@ export function mountParkSetup(root) {
       sounds.click();
       wear(slot, item.id);
     } else {
-      if (data.coins < item.price) return;
+      if (item.unlockText || data.coins < item.price) return;
       sounds.levelUp();
       updateGameData('park', { coins: data.coins - item.price, owned: [...data.owned, item.id], outfit: { ...data.outfit, [slot]: item.id } });
       trackEvent(`parque-tienda-${item.id}`, 'Parque · compra en la tienda');
@@ -84,11 +84,11 @@ export function mountParkSetup(root) {
     refreshers.push(() => {
       const owned = isOwned(data, item);
       const isWorn = currentOutfit(data)[slot].id === item.id;
-      button.disabled = !owned && data.coins < item.price;
+      button.disabled = !owned && (Boolean(item.unlockText) || data.coins < item.price);
       button.classList.toggle('is-selected', isWorn);
       button.classList.toggle('is-owned', owned);
       button.setAttribute('aria-pressed', String(isWorn));
-      price.textContent = isWorn ? '✅ Puesto' : owned ? 'Ponérmelo' : `🪙 ${item.price}`;
+      price.textContent = isWorn ? '✅ Puesto' : owned ? 'Ponérmelo' : (item.unlockText ?? `🪙 ${item.price}`);
     });
     return button;
   }

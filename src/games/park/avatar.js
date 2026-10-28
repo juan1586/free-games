@@ -106,6 +106,16 @@ function buildBody(kit, look) {
   addHair(kit, body, hairKind, look.hairColor?.color ?? DEFAULT_HAIR_COLOR, swingers);
   addHat(kit, body, look.hat, spinners, HEAD_TOP + (HAIR_LIFT[hairKind] ?? 0.06));
   addExtra(kit, body, look.extra, flappers);
+  // Lo secreto (de las llaves) brilla: estrellitas que dan vueltas alrededor.
+  if (look.hat?.sparkle || look.extra?.sparkle) {
+    const sparkles = at(new THREE.Group(), 0, 1.6, 0);
+    for (let index = 0; index < 4; index += 1) {
+      const angle = (index / 4) * Math.PI * 2;
+      sparkles.add(at(kit.sphere(0.06, 0xfff2a8, 6, { emissive: 0xffd93d }), Math.cos(angle) * 0.75, Math.sin(index * 1.7) * 0.5, Math.sin(angle) * 0.75));
+    }
+    body.add(sparkles);
+    spinners.push(sparkles);
+  }
   return { body, leftLeg, rightLeg, leftArm, rightArm, spinners, flappers, swingers };
 }
 

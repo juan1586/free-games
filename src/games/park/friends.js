@@ -5,6 +5,7 @@
  */
 import { getSession, leaveRoom, onDisconnect, onLeave, onMessage, send } from '../../core/race.js';
 import { createAvatar } from './avatar.js';
+import { createPet } from './pet.js';
 import { outfitFromIds } from './outfits.js';
 import { SAYINGS, parseBoard, parseParkPos, parseRideState, parseSaying } from './race.js';
 
@@ -38,11 +39,13 @@ export function createFriends({ kit, scene, onEvent }) {
       avatar.root.visible = false;
       avatar.shadow.visible = false;
       scene.add(avatar.root, avatar.shadow);
+      const pet = createPet(kit, scene, look.pet?.kind);
       friends.set(player.id, {
         id: player.id,
         name: player.name,
         emoji: player.avatar,
         look,
+        pet,
         avatar,
         bubble,
         bubbleTimer: 0,
@@ -136,6 +139,7 @@ export function createFriends({ kit, scene, onEvent }) {
         avatar.root.rotation.y = friend.heading + (friend.danceTimer > 0 ? (1 - friend.danceTimer / DANCE_SECONDS) * Math.PI * 4 : 0);
         avatar.shadow.position.set(friend.x, 0.03, friend.z);
         avatar.update(delta, { speed: target.speed, airborne: target.airborne });
+        friend.pet?.update(delta, { x: friend.x, y: Math.max(0, friend.y - (target.airborne ? 1 : 0)), z: friend.z, visible });
         if (friend.bubbleTimer > 0) {
           friend.bubbleTimer -= delta;
           if (friend.bubbleTimer <= 0) friend.bubble.sprite.visible = false;

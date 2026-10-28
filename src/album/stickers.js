@@ -104,6 +104,8 @@ export const STICKERS = [
   sticker('park', 'park-candies-all', '🍬', 'Todos los caramelos', 'Encuentra todos los caramelos dorados', ({ park }) =>
     park.goldenCandies.length >= GOLDEN_CANDIES.length,
   ),
+  sticker('park', 'park-key-first', '🗝️', 'Llave secreta', 'Encuentra la llave secreta de un parque', ({ park }) => (park.keys ?? []).length >= 1),
+  sticker('park', 'park-keys-all', '🦄', 'Cofre de las llaves', 'Junta las 5 llaves secretas y abre el cofre', ({ park }) => (park.keys ?? []).length >= 5),
   sticker('park', 'park-missions', '📋', 'Misionera', 'Cumple 10 misiones del parque', ({ park }) => park.missionsDone >= 10),
   sticker('park', 'park-friends', '👭', 'Parque con amigas', 'Entra al parque con amigas', ({ park }) => park.friendVisits >= 1),
   sticker('park', 'park-fashion', '🤠', 'Arriera elegante', 'Compra 3 cosas en la tienda del parque', ({ park }) => park.owned.length >= 3),

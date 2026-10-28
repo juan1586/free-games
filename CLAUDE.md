@@ -30,6 +30,8 @@ src/core/          storage (localStorage con fallback en memoria), player (perfi
                    date (localDay: fecha local para lo diario)
 src/album/         stickers (pegatinas de todos los juegos, syncStickers, cofre del día), album (pantalla)
 src/ui/            dom (el, navigate), hud (createGameHeader, createBanner), modal (showModal), menu, profile,
+                   stageFit (lienzo que se adapta a la pantalla), rotateHint (aviso «gira el celular»),
+                   fullscreen (pantalla completa + horizontal),
                    raceLobby (sala de espera común), raceResults (podio y fin de carrera)
 src/games/dino/    DinoGame, dinos (tipos y dibujo), worlds (mundos y obstáculos), setup, race, raceLobby
 src/games/tetris/  TetrisGame, levels, setup
@@ -42,7 +44,7 @@ src/games/park/    worlds (parques, atracciones, tesoros, desbloqueo), outfits (
                    worldPlaya + propsBeach (Playa de Cartagena), worldSelva + propsJungle (Selva Amazónica),
                    worldDulces + propsCandy (Castillo de Dulces),
                    parks (elige el constructor),
-                   crowd (visitantes y vigilantes), riders (visitantes sentados en las atracciones), joystick,
+                   crowd (visitantes y vigilantes), riders (visitantes sentados en las atracciones), joystick, pet (mascota),
                    rides/ (un minijuego por atracción), race + raceLobby + friends (parque con amigas), ParkGame, setup
 src/styles/        tokens.css (paleta, tipografía Fredoka, sombras), base, menu, games
 scripts/           check-geo-levels.mjs
@@ -59,6 +61,7 @@ scripts/           check-geo-levels.mjs
 - Sonidos y música se generan en `core/audio.js` (sin archivos de audio). Respetar `isMuted()`.
 - Estadísticas (`core/analytics.js`, GoatCounter, solo en producción): el router cuenta cada pantalla con `trackPage`; los hitos se cuentan con `trackEvent`. **Nunca enviar nombres de jugador, códigos de sala ni otros datos personales**, solo rutas y nombres de evento fijos. Para distinguir jugadores se envía su `statsId` (número al azar de 4 cifras, visible en «Editar jugador») como referrer `jugador-NNNN`.
 - Turbo: en Dino y Salto Geométrico, mantener `Shift` o el botón ⚡.
+- **Cualquier dispositivo (obligatorio en todo juego nuevo)**: debe verse y jugarse bien en celular vertical (375×667), celular horizontal (667×375, táctil), tablet (768×1024 y 1024×768) y PC (1280×800), sin scroll y sin que los botones tapen el juego. Piezas comunes: `createStageFit` (`ui/stageFit.js`: alto lógico fijo y ancho lógico según la pantalla; en celular horizontal el juego llena la pantalla, en vertical la vista se estrecha para verse más grande), `createRotateHint` (`ui/rotateHint.js`, para juegos que se juegan acostados) y `createFullscreenButton` (`ui/fullscreen.js`). Dino y Geo usan la clase `game-page--runner` (CSS en `games.css`): en horizontal la cabecera flota sobre el cielo y los botones van en una barra abajo; en vertical, cabecera en dos filas y botones grandes abajo. Probar con playwright + CDP `Emulation.setEmulatedMedia` (`pointer: coarse`, `hover: none`), porque `isMobile` solo no activa los botones táctiles.
 
 ## Dino Corre (detalles)
 
@@ -71,6 +74,7 @@ scripts/           check-geo-levels.mjs
 - `physics.js` no toca el DOM: lo usan el juego y el bot de verificación. Paso fijo de 1/240 s; unidades en px con Y hacia arriba y el suelo en y = 0.
 - Los niveles se escriben en `levels.js` encadenando **secciones** (`spikes`, `ledge`, `padToPlatform`, `rocketGates`, `ballFlips`, `planeGates`, `magnetFlips`, `waveGates`…). Las posiciones están en celdas de 40 px. Cada nivel tiene 3 monedas (`coinAt`). `onCeiling(sección)` cuelga cualquier sección del techo (para la gravedad al revés).
 - Modos: `cube`, `rocket`, `ball`, `plane`, `magnet` (pulsar = salta al lado contrario) y `wave` (mantener = sube en diagonal). Portales especiales (`SPECIAL_PORTALS` en `physics.js`): `flipUp`/`flipDown` (gravedad del cubo) y `fast`/`normalSpeed` (`state.speedFactor`). Aro azul: `gravityOrb`.
+- La vista no cambia la física: el ancho lógico va de 560 (vertical) a 1200, y el jugador se dibuja más a la izquierda con la vista estrecha (`playerScreenX`). En Dino los obstáculos salen siempre en `SPAWN_X` (ancho máximo + 30), así la carrera es igual con cualquier pantalla.
 - Mundos 6-8 (`expert: true`) son para expertos; los 5 primeros se dejan como están, para principiantes.
 - Velocidades elegibles (`SPEEDS`: 🐢 ×0.85, 🐇 ×1, ⚡ ×1.2) y turbo (`TURBO_FACTOR` ×1.25).
 - **Cualquier cambio en niveles, física o velocidades ⇒ ejecutar `npm run check:levels`.** Comprueba cada nivel en las 3 velocidades, con y sin turbo, con decisiones cada 100 ms, y que todas las monedas son alcanzables. Tarda unos 3 minutos; `npm run check:levels -- 2-3` comprueba solo un nivel.
@@ -93,6 +97,7 @@ scripts/           check-geo-levels.mjs
 - Agua: el constructor del parque puede devolver `isWater(x, z)`. Quien la pisa a ras de suelo hace «¡splash!» y vuelve al último sitio seco (`drySpot`, `fallInWater` en `ParkGame.js`); ahí no salen monedas. Lo usan la selva (río y lago) y el castillo (lago de chocolate); para cruzarla hay cajas bajas (victorias regias, embarcadero, galletas).
 - **Personaje**: `outfits.js` tiene piel, peinado (`HAIR_STYLES`), color de pelo (`HAIR_COLORS`), cara (`FACES`), camiseta, pantalón o falda (`skirt`/`tutu` en `PANTS`), sombrero y extra; `LOOK_KEYS` lista los campos que se comparten con las amigas (validados en `parseParkLook`). `randomLook` saca peinado y cara del mismo número al azar que la piel, para no cambiar los parques que se construyen con semilla fija. La vista previa del vestidor es CSS (`data-hair`, `data-face`, `data-bottom` en `.park-avatar`).
 - **Cámara y bajarse**: `CAMERA_MODES` en `ParkGame.js` (normal, cerca, lejos, primera persona; botón 🎥 o tecla `C`, guardado en `park.camera`). En primera persona la jugadora no se ve (`syncAvatarVisibility`) y a los lados se gira la mirada. Con 🚪 (o desde la pausa) se baja de la atracción: `exitRide` llama a `dispose()` sin premio ni viaje contado.
+- **Viajar y llaves secretas**: en cada parque hay una estación del tren 🚂 (`STATION` en `parkBase.js`) y un botón 🗺️ en la cabecera: abren el modal para ir a otro parque abierto (`openTravel` / `travelTo` en `ParkGame.js`, que navega a `#/parque/jugar?mundo=N` sin salir de pantalla completa). Al abrir un parque nuevo, el resultado de la atracción trae el botón para ir. Con amigas no se viaja (el parque lo pone la sala). Cuando se juntan todos los tesoros de un parque aparece su llave 🗝️ (`SECRET_KEY_SPOT` en `worlds.js`, guardada en `park.keys`); cada llave abre una prenda secreta (`key`/`unlockText`/`sparkle` en `outfits.js`, brillan con estrellitas) y las 5 abren el cofre con la mascota (`PETS`, `pet.js`: sigue a la jugadora y a las amigas; `pet` va en `LOOK_KEYS`).
 - **Celular**: con `(max-height: 560px), (max-width: 700px)` (`COMPACT_QUERY` en `ParkGame.js` y el mismo `@media` en `games.css`) el parque ocupa toda la pantalla y la cabecera flota encima; las misiones empiezan plegadas y los saludos se abren con 😀. En vertical se abre el ángulo de la cámara (`MAX_FOV`). El modo (`data-mode`) se pone en el escenario y en la página. Probar en 375×667 y 667×375 con `hasTouch`.
 - **Montar juntas**: cuando a una amiga le toca subir (o paga el pase), se lleva a las que están en su misma fila (mensaje `board` {ride, seed, ids}). Todas usan esa semilla en el minijuego (`ctx.random`), así ven la misma caída, globos o camino. Cada minijuego recibe `ctx.mates` (las sienta a tu lado o en tu cabina), `ctx.myId` (orden común de salida) y `announce(kind)`; puede definir `onMateSay(id, kind)` y, si las amigas se mueven (chocones, cerditos), `mateState()` / `onMateState(id, state)` (mensaje `rstate`). Si dos suben a la vez, manda la de id menor (`BOARD_MERGE_MS`).
 

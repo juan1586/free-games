@@ -1,6 +1,8 @@
 /**
  * Ropa y accesorios del personaje del parque. Lo de precio 0 se tiene desde el principio;
  * lo demás se compra con las monedas del parque (`park.owned`) y se lleva en `park.outfit`.
+ * Lo que tiene `key` (id de un parque) no se compra: se abre con la llave secreta de ese parque
+ * (`park.keys`); brilla (`sparkle`). La mascota se abre con todas las llaves.
  * Sin three.js: la pantalla previa dibuja la vista previa con CSS.
  */
 
@@ -77,6 +79,8 @@ export const HATS = [
   { id: 'bunny', name: 'Orejas de conejo', icon: '🐰', kind: 'bunny', color: '#ffffff', price: 45 },
   { id: 'propeller', name: 'Gorro hélice', icon: '🚁', kind: 'propeller', color: '#5ab0ff', price: 50 },
   { id: 'crown', name: 'Corona', icon: '👑', kind: 'crown', color: '#ffd93d', price: 80 },
+  { id: 'rainbow-crown', name: 'Corona arcoíris', icon: '🌈', kind: 'crown', color: '#ff8ac4', key: 'cafe', unlockText: '🗝️ Llave del Café', sparkle: true, price: 0 },
+  { id: 'magic-flower', name: 'Flor mágica', icon: '🌺', kind: 'flower', color: '#b57bff', key: 'selva', unlockText: '🗝️ Llave de la Selva', sparkle: true, price: 0 },
 ];
 
 export const EXTRAS = [
@@ -88,6 +92,16 @@ export const EXTRAS = [
   { id: 'backpack', name: 'Mochila', icon: '🎒', kind: 'backpack', color: '#ff9f43', price: 25 },
   { id: 'cape', name: 'Capa', icon: '🦸', kind: 'cape', color: '#7b5cff', price: 55 },
   { id: 'wings', name: 'Alas de mariposa', icon: '🦋', kind: 'wings', color: '#ff8ac4', price: 90 },
+  { id: 'fairy-wings', name: 'Alas de hada', icon: '🧚', kind: 'wings', color: '#c9b8ff', key: 'panaca', unlockText: '🗝️ Llave de la Granja', sparkle: true, price: 0 },
+  { id: 'mermaid-cape', name: 'Capa de sirena', icon: '🧜', kind: 'cape', color: '#2fc4b2', key: 'playa', unlockText: '🗝️ Llave de la Playa', sparkle: true, price: 0 },
+  { id: 'heart-glasses', name: 'Gafas de corazón', icon: '💖', kind: 'glasses', color: '#ff4f8b', key: 'dulces', unlockText: '🗝️ Llave del Castillo', sparkle: true, price: 0 },
+];
+
+/** Cuántas llaves secretas hay (una por parque) y la mascota que se abre con todas. */
+export const SECRET_KEY_COUNT = 5;
+export const PETS = [
+  { id: 'pet-none', name: 'Sin mascota', icon: '🚫', kind: 'none', price: 0 },
+  { id: 'pet-unicorn', name: 'Unicornio bebé', icon: '🦄', kind: 'unicorn', allKeys: true, unlockText: '🗝️ Junta las 5 llaves', sparkle: true, price: 0 },
 ];
 
 /** Lo que se elige en la tienda (`slot` = campo de `park.outfit`). La piel y el color del pelo van aparte. */
@@ -98,11 +112,17 @@ export const OUTFIT_SLOTS = [
   { slot: 'pants', title: '👖 Pantalones y faldas', items: PANTS },
   { slot: 'hat', title: '🎩 En la cabeza', items: HATS },
   { slot: 'extra', title: '✨ Extras', items: EXTRAS },
+  { slot: 'pet', title: '🦄 Mascota', items: PETS },
 ];
 
 const findIn = (items, id) => items.find((item) => item.id === id) ?? items[0];
 
-export const isOwned = (data, item) => item.price === 0 || data.owned.includes(item.id);
+export function isOwned(data, item) {
+  const keys = data.keys ?? [];
+  if (item.allKeys) return keys.length >= SECRET_KEY_COUNT;
+  if (item.key) return keys.includes(item.key);
+  return item.price === 0 || data.owned.includes(item.id);
+}
 
 /** Ropa puesta y válida (si algo no está comprado o ya no existe, se usa lo básico). */
 export function currentOutfit(data) {
@@ -120,6 +140,7 @@ export function currentOutfit(data) {
     pants: pick(PANTS, outfit.pants),
     hat: pick(HATS, outfit.hat),
     extra: pick(EXTRAS, outfit.extra),
+    pet: pick(PETS, outfit.pet),
   };
 }
 
@@ -132,6 +153,7 @@ const LOOK_PARTS = {
   pants: PANTS,
   hat: HATS,
   extra: EXTRAS,
+  pet: PETS,
 };
 export const LOOK_KEYS = Object.keys(LOOK_PARTS);
 
@@ -162,7 +184,8 @@ export function randomLook(random) {
     face: share(FACES, 53),
     shirt: pick(SHIRTS),
     pants: pick(PANTS),
-    hat: random() < 0.45 ? pick(HATS) : HATS[0],
-    extra: random() < 0.25 ? pick(EXTRAS.filter((item) => item.kind !== 'wings')) : EXTRAS[0],
+    hat: random() < 0.45 ? pick(HATS.filter((item) => !item.key)) : HATS[0],
+    extra: random() < 0.25 ? pick(EXTRAS.filter((item) => item.kind !== 'wings' && !item.key)) : EXTRAS[0],
+    pet: PETS[0],
   };
 }

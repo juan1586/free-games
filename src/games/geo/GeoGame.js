@@ -6,6 +6,9 @@ import { getActivePlayer, getGameData, updateGameData } from '../../core/player.
 import { createBanner, createGameHeader, createTouchButton } from '../../ui/hud.js';
 import { closeModal, showModal } from '../../ui/modal.js';
 import { el, navigate } from '../../ui/dom.js';
+import { createStageFit } from '../../ui/stageFit.js';
+import { createRotateHint } from '../../ui/rotateHint.js';
+import { createFullscreenButton, exitFullscreen } from '../../ui/fullscreen.js';
 import { getSession, leaveRoom } from '../../core/race.js';
 import { RaceMatch } from '../../core/raceMatch.js';
 import { trackEvent } from '../../core/analytics.js';
@@ -29,16 +32,18 @@ import { RAINBOW, drawPlayer, resolveSkin } from './shapes.js';
 import { canPlayLevel, findNewAchievements } from './achievements.js';
 import { parseGeoPos } from './race.js';
 
-/** El alto lógico es fijo; el ancho se adapta a la pantalla (más ancho en celular horizontal). */
+/** El alto lógico es fijo; el ancho se adapta a la pantalla (ver ui/stageFit.js). */
 const MIN_VIEW_WIDTH = 800;
+const PORTRAIT_VIEW_WIDTH = 560;
+/** En un celular en horizontal se deja la vista un poco más estrecha para que el juego llene el alto. */
+const LANDSCAPE_VIEW_WIDTH = 640;
 const MAX_VIEW_WIDTH = 1200;
-const MIN_DISPLAY_HEIGHT = 180;
-const STAGE_BOTTOM_MARGIN = 14;
-const CONTROLS_GAP = 14;
-const REFIT_AFTER_ROTATION_MS = 300;
 const VIEW_HEIGHT = 400;
 const FLOOR_Y = 340;
+/** Dónde va el jugador en la pantalla: con la vista estrecha (celular en vertical), más a la izquierda. */
 const PLAYER_SCREEN_X = 220;
+const MIN_PLAYER_SCREEN_X = 150;
+const PLAYER_SCREEN_SHARE = 0.275;
 const CAMERA_LIFT_FROM = 150;
 const CUBE_SPIN_SPEED = 5.6;
 const MAX_TILT = 0.7;
@@ -105,7 +110,25 @@ export class GeoGame {
     this.practiceTipShown = false;
 
     this.buildDom(root);
-    this.fitCanvas();
+    this.stageFit = createStageFit({
+      page: this.page,
+      stage: this.stage,
+      canvas: this.canvas,
+      header: this.header.element,
+      controls: this.touchControls,
+      viewHeight: VIEW_HEIGHT,
+      minWidth: MIN_VIEW_WIDTH,
+      portraitMinWidth: PORTRAIT_VIEW_WIDTH,
+      landscapeMinWidth: LANDSCAPE_VIEW_WIDTH,
+      maxWidth: MAX_VIEW_WIDTH,
+      onChange: (viewWidth) => {
+        this.viewWidth = viewWidth;
+        this.playerScreenX = clamp(Math.round(viewWidth * PLAYER_SCREEN_SHARE), MIN_PLAYER_SCREEN_X, PLAYER_SCREEN_X);
+        this.ctx = setupCanvas(this.canvas, viewWidth, VIEW_HEIGHT);
+        if (this.state) this.render();
+      },
+    });
+    this.stageFit.fit();
     this.decor = Array.from({ length: 16 }, () => ({
       x: random(0, DECOR_SPAN),
       y: random(30, 270),
@@ -156,6 +179,7 @@ export class GeoGame {
       title: `${titlePrefix}${title}`,
       backPath: '/geo',
       onPause: () => this.pause(),
+      extraActions: [createFullscreenButton({ landscape: true })].filter(Boolean),
       items,
     });
 
@@ -176,14 +200,13 @@ export class GeoGame {
     this.turboButton = createTouchButton({ icon: '⚡', label: 'Turbo', variant: 'turbo' });
     this.touchControls = el('div', { className: 'touch-controls touch-controls--geo' }, [this.turboButton, this.jumpButton]);
 
-    this.page = el('main', { className: 'page game-page game-page--geo game-page--side-controls' }, [
+    this.page = el('main', { className: 'page game-page game-page--runner game-page--geo' }, [
       this.header.element,
       this.stage,
       this.touchControls,
     ]);
-    // La animación de entrada desplaza la página unos píxeles: se vuelve a medir al terminar.
-    this.page.addEventListener('animationend', (event) => event.target === this.page && this.fitCanvas());
     root.append(this.page);
+    this.closeRotateHint = createRotateHint(this.page);
   }
 
   bindControls() {
@@ -193,13 +216,6 @@ export class GeoGame {
       this.setTurbo(false);
     };
     window.addEventListener('blur', handleBlur);
-    const handleResize = () => {
-      this.fitCanvas();
-      clearTimeout(this.refitTimer);
-      // Algunos móviles actualizan el alto de la ventana un poco después de girar.
-      this.refitTimer = setTimeout(() => this.fitCanvas(), REFIT_AFTER_ROTATION_MS);
-    };
-    window.addEventListener('resize', handleResize);
 
     return [
       bindKeyboard(
@@ -221,36 +237,7 @@ export class GeoGame {
       bindHoldButton(this.jumpButton, { onPress: () => this.press(), onRelease: release }),
       bindHoldButton(this.turboButton, { onPress: () => this.setTurbo(true), onRelease: () => this.setTurbo(false) }),
       () => window.removeEventListener('blur', handleBlur),
-      () => {
-        window.removeEventListener('resize', handleResize);
-        clearTimeout(this.refitTimer);
-      },
     ];
-  }
-
-  /**
-   * Ajusta el ancho lógico del lienzo al espacio disponible: el juego ocupa todo el ancho
-   * y, si la pantalla es baja (celular en horizontal), se ve más nivel por delante en vez de encogerse.
-   */
-  fitCanvas() {
-    const width = this.stage.clientWidth;
-    let viewWidth = MIN_VIEW_WIDTH;
-    if (width > 0) {
-      // El juego empieza justo debajo de la cabecera (también cuando los botones van a los lados).
-      const rowGap = parseFloat(getComputedStyle(this.page).rowGap) || 0;
-      const stageTop = this.header.element.getBoundingClientRect().bottom + window.scrollY + rowGap;
-      const controlsDisplay = getComputedStyle(this.touchControls).display;
-      const controlsBelow = controlsDisplay !== 'none' && controlsDisplay !== 'contents';
-      const reserved = controlsBelow ? this.touchControls.offsetHeight + CONTROLS_GAP : 0;
-      const available = window.innerHeight - stageTop - reserved - STAGE_BOTTOM_MARGIN;
-      const displayHeight = Math.min(width / 2, Math.max(available, MIN_DISPLAY_HEIGHT));
-      viewWidth = clamp(Math.round((VIEW_HEIGHT * width) / displayHeight), MIN_VIEW_WIDTH, MAX_VIEW_WIDTH);
-    }
-    if (viewWidth === this.viewWidth) return;
-    this.viewWidth = viewWidth;
-    this.canvas.style.aspectRatio = `${viewWidth} / ${VIEW_HEIGHT}`;
-    this.ctx = setupCanvas(this.canvas, viewWidth, VIEW_HEIGHT);
-    if (this.state) this.render();
   }
 
   press() {
@@ -484,7 +471,7 @@ export class GeoGame {
 
   win() {
     this.status = 'won';
-    this.winCameraX = this.state.x - PLAYER_SCREEN_X;
+    this.winCameraX = this.state.x - this.playerScreenX;
     this.music.stop();
     sounds.win();
     this.spawnConfetti();
@@ -996,7 +983,7 @@ export class GeoGame {
   }
 
   get view() {
-    const cameraX = this.status === 'won' ? this.winCameraX : this.state.x - PLAYER_SCREEN_X;
+    const cameraX = this.status === 'won' ? this.winCameraX : this.state.x - this.playerScreenX;
     return { x: cameraX, y: this.cameraY, floor: FLOOR_Y };
   }
 
@@ -1466,6 +1453,9 @@ export class GeoGame {
     closeModal();
     this.loop.destroy();
     this.unbinders.forEach((unbind) => unbind());
+    this.stageFit.destroy();
+    this.closeRotateHint();
+    exitFullscreen();
   }
 }
 
