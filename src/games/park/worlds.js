@@ -327,6 +327,32 @@ export const PARK_WORLDS = [
 export const isWorldOpen = (world, data) => !world.unlock || world.unlock.check(data);
 export const getWorldOfRide = (rideId) => PARK_WORLDS.find((world) => world.rides.some((ride) => ride.id === rideId));
 
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+
+/**
+ * Cuánto se ha completado un parque (para el mapa): atracciones montadas, tesoros y llave secreta.
+ * `missing` es un texto corto con lo que falta.
+ */
+export function worldProgress(world, data) {
+  const ridesDone = world.rides.filter((ride) => (data.ridesDone?.[ride.id] ?? 0) >= 1).length;
+  const found = (data[world.treasure.key] ?? []).length;
+  const treasures = world.treasure.items.length;
+  const hasKey = (data.keys ?? []).includes(world.id);
+  const total = world.rides.length + treasures + 1;
+  const percent = Math.round(((ridesDone + found + (hasKey ? 1 : 0)) / total) * 100);
+  const parts = [];
+  if (ridesDone < world.rides.length) parts.push(plural(world.rides.length - ridesDone, 'atracción', 'atracciones'));
+  // «grano dorado» → «granos dorados», «caracola dorada» → «caracolas doradas».
+  if (found < treasures) parts.push(plural(treasures - found, world.treasure.item, world.treasure.item.replace(/(\S+)/g, '$1s')));
+  else if (!hasKey) parts.push('la llave 🗝️');
+  const missing = parts.length ? `Te falta: ${parts.join(' y ')}` : '¡Parque completo! 👑';
+  return { ridesDone, rides: world.rides.length, found, treasures, hasKey, percent, missing };
+}
+
+/** Progreso de todo el mundo mágico (promedio de los parques), de 0 a 100. */
+export const totalProgress = (data) =>
+  Math.round(PARK_WORLDS.reduce((sum, world) => sum + worldProgress(world, data).percent, 0) / PARK_WORLDS.length);
+
 /** Mundos que vendrán (se muestran como «próximamente» en la pantalla previa). */
 export const UPCOMING_WORLDS = [];
 

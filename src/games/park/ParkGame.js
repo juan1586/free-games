@@ -17,8 +17,10 @@ import { syncStickers } from '../../album/stickers.js';
 import { at, createKit } from './kit.js';
 import { canFullscreen, exitFullscreen, toggleFullscreen } from '../../ui/fullscreen.js';
 import { createAvatar } from './avatar.js';
-import { SECRET_KEY_COUNT, currentOutfit } from './outfits.js';
+import { SECRET_KEY_COUNT, currentOutfit, openPets } from './outfits.js';
 import { createPet } from './pet.js';
+import { createSurprises } from './surprises.js';
+import { createWorldMap } from './worldMap.js';
 import { PARK_RADIUS, SPAWN, STATION, STATION_PROMPT_DISTANCE } from './parkBase.js';
 import { buildPark } from './parks.js';
 import { PERSON_RADIUS, createCrowd } from './crowd.js';
@@ -80,6 +82,8 @@ const BOARD_MERGE_MS = 2500;
 const TRAVEL_DELAY_MS = 900;
 /** Semilla fija: el parque se ve siempre igual (mismas palmas, mismo cafetal). */
 const PARK_LAYOUT_SEED = 2024;
+/** Monedas sueltas y sorpresas: lejos de la orilla del parque. */
+const SPOT_EDGE_MARGIN = 2;
 
 /** Música de cada parque. */
 const MUSIC = {
@@ -196,6 +200,14 @@ export class ParkGame {
 
     this.buildCoins();
     this.buildBeans();
+    // Mascotas ya abiertas (para avisar cuando se abra una nueva).
+    this.petsOpen = new Set(openPets(data).map((pet) => pet.id));
+    this.surprises = createSurprises({
+      kit: this.kit,
+      scene: this.scene,
+      findSpot: (min, max, around) => this.randomSpot(min, max, around),
+      onEvent: (event) => this.handleSurprise(event),
+    });
     this.music = createMusicLoop(MUSIC[this.world.id] ?? MUSIC.cafe);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -227,18 +239,16 @@ export class ParkGame {
       attrs: { type: 'button', 'aria-label': 'Cambiar la cámara' },
       on: { click: (event) => this.handleButton(event, () => this.cycleCamera()) },
     });
-    const extraActions = [this.cameraButton];
-    // Viajar a otro parque (con amigas, el parque lo elige la sala).
-    if (!this.withFriends) {
-      extraActions.push(
-        el('button', {
-          className: 'icon-btn park-travel-button',
-          text: '🗺️',
-          attrs: { type: 'button', 'aria-label': 'Viajar a otro parque', title: 'Viajar a otro parque' },
-          on: { click: (event) => this.handleButton(event, () => this.openTravel()) },
-        }),
-      );
-    }
+    // Mapa del mundo: ver lo que falta y viajar a otro parque (con amigas solo se mira).
+    const extraActions = [
+      this.cameraButton,
+      el('button', {
+        className: 'icon-btn park-travel-button',
+        text: '🗺️',
+        attrs: { type: 'button', 'aria-label': 'Mapa del mundo', title: 'Mapa del mundo' },
+        on: { click: (event) => this.handleButton(event, () => this.openTravel()) },
+      }),
+    ];
     // Pantalla completa (en Android quita las barras del navegador; el iPhone no la tiene).
     if (canFullscreen()) {
       extraActions.push(
@@ -354,6 +364,9 @@ export class ParkGame {
     ]);
 
     this.resultLayer = el('div', { className: 'park-result' });
+    this.mapLayer = el('div', { className: 'park-map', attrs: { hidden: true } });
+    // Contador del reto del mago (estrellas y tiempo).
+    this.surpriseStatus = el('div', { className: 'park-surprise-status', attrs: { hidden: true, 'aria-live': 'polite' } });
 
     this.stage = el('div', { className: 'stage stage--park' }, [
       this.canvas,
@@ -370,7 +383,9 @@ export class ParkGame {
       this.cutterButton,
       touch,
       this.actionButton,
+      this.surpriseStatus,
       this.resultLayer,
+      this.mapLayer,
     ]);
     this.showBanner = createBanner(this.stage);
     this.page = el('main', { className: 'page game-page park-page' }, [this.header.element, this.stage]);
@@ -410,6 +425,10 @@ export class ParkGame {
 
   bindControls() {
     const press = (action) => {
+      if (this.mapOpen) {
+        if (action === 'pause') this.closeMap();
+        return;
+      }
       if (action === 'pause') return this.pause();
       if (action === 'camera') return this.cycleCamera();
       if (this.status === 'result') {
@@ -522,6 +541,7 @@ export class ParkGame {
     this.crowd.update(delta);
     this.updateFriends(delta);
     this.animatePickups(delta);
+    this.surprises.update(delta, this.player, this.status === 'walk');
     if (this.hintTimer > 0) {
       this.hintTimer -= delta;
       if (this.hintTimer <= 0) this.hint.hidden = true;
@@ -726,20 +746,29 @@ export class ParkGame {
   }
 
   placeCoin(entry) {
-    const queueSegments = this.rides.map((ride) => [slotPosition(ride, -1), slotPosition(ride, MAX_QUEUE + 1)]);
+    const spot = this.randomSpot(6, PARK_RADIUS - SPOT_EDGE_MARGIN);
+    entry.mesh.visible = Boolean(spot);
+    if (spot) entry.mesh.position.set(spot.x, 1, spot.z);
+    else entry.respawn = COIN_RESPAWN_SECONDS;
+  }
+
+  /**
+   * Sitio libre al azar a una distancia entre `min` y `max` de `around` (por defecto la plaza):
+   * sin choques, sin agua, dentro del parque y lejos de las filas. Null si no se encuentra.
+   */
+  randomSpot(min, max, around = { x: 0, z: 0 }) {
+    this.queueSegments ??= this.rides.map((ride) => [slotPosition(ride, -1), slotPosition(ride, MAX_QUEUE + 1)]);
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const angle = Math.random() * Math.PI * 2;
-      const radius = 6 + Math.random() * (PARK_RADIUS - 8);
-      const x = Math.sin(angle) * radius;
-      const z = Math.cos(angle) * radius;
+      const radius = min + Math.random() * (max - min);
+      const x = around.x + Math.sin(angle) * radius;
+      const z = around.z + Math.cos(angle) * radius;
+      if (Math.hypot(x, z) > PARK_RADIUS - SPOT_EDGE_MARGIN) continue;
       if (isBlocked(this.park.colliders, x, z, 1) || this.park.isWater?.(x, z)) continue;
-      if (queueSegments.some(([a, b]) => distanceToSegment({ x, z }, a, b) < 1.8)) continue;
-      entry.mesh.position.set(x, 1, z);
-      entry.mesh.visible = true;
-      return;
+      if (this.queueSegments.some(([a, b]) => distanceToSegment({ x, z }, a, b) < 1.8)) continue;
+      return { x, z };
     }
-    entry.mesh.visible = false;
-    entry.respawn = COIN_RESPAWN_SECONDS;
+    return null;
   }
 
   buildBeans() {
@@ -780,22 +809,16 @@ export class ParkGame {
     this.secretKey = null;
     const data = getGameData('park');
     const keys = [...(data.keys ?? []), this.world.id];
-    const allKeys = keys.length >= SECRET_KEY_COUNT;
-    // Con todas las llaves se abre el cofre: la mascota se pone sola.
-    updateGameData('park', { keys, coins: data.coins + KEY_COINS, ...(allKeys ? { outfit: { ...data.outfit, pet: 'pet-unicorn' } } : {}) });
+    updateGameData('park', { keys, coins: data.coins + KEY_COINS });
     sounds.achievement();
+    this.pet?.cheer();
     this.notify(`🗝️ ¡Llave secreta! ${keys.length}/${SECRET_KEY_COUNT} · +${KEY_COINS} 🪙`);
     this.notify('✨ En el vestidor se abrió ropa secreta');
     this.friends?.say('key');
     trackEvent(`parque-llave-${this.world.id}`, `Parque · llave secreta de ${this.world.name}`);
-    if (allKeys) {
-      this.notify('🎁 ¡Abriste el Cofre de las Llaves! 🦄 Un unicornio bebé te acompaña');
-      trackEvent('parque-mascota', 'Parque · cofre de las llaves');
-      if (!this.pet) {
-        this.look = currentOutfit(getGameData('park'));
-        this.pet = createPet(this.kit, this.scene, this.look.pet.kind);
-      }
-    }
+    // Con todas las llaves se abre el cofre: el unicornio sale de checkPets.
+    if (keys.length >= SECRET_KEY_COUNT) this.notify('🎁 ¡Abriste el Cofre de las Llaves!');
+    this.checkPets();
     this.refreshHud();
     this.checkStickers();
   }
@@ -842,6 +865,7 @@ export class ParkGame {
       const found = [...(data[key] ?? []), entry.bean.id];
       updateGameData('park', { [key]: found, coins: data.coins + BEAN_COINS });
       sounds.achievement();
+      this.pet?.cheer();
       this.notify(`${icon} ¡${capitalize(item)}! ${found.length}/${items.length} · +${BEAN_COINS} 🪙`);
       this.friends?.say('bean');
       trackEvent(`parque-tesoro-${this.world.id}`, `Parque · ${item} en ${this.world.name}`);
@@ -858,6 +882,59 @@ export class ParkGame {
     const data = getGameData('park');
     updateGameData('park', { coins: data.coins + amount });
     this.refreshHud();
+  }
+
+  // ---------- Mascotas ----------
+
+  /** ¿Se abrió alguna mascota? Se avisa y la más nueva se pone sola (las amigas la ven al momento). */
+  checkPets() {
+    const data = getGameData('park');
+    const fresh = openPets(data).filter((pet) => !this.petsOpen.has(pet.id));
+    if (!fresh.length) return;
+    fresh.forEach((pet) => {
+      this.petsOpen.add(pet.id);
+      this.notify(`${pet.icon} ¡Nueva mascota: ${pet.name}! Te acompaña por el parque`);
+      trackEvent(`parque-mascota-${pet.kind}`, 'Parque · mascota nueva');
+    });
+    sounds.achievement();
+    updateGameData('park', { outfit: { ...data.outfit, pet: fresh[fresh.length - 1].id } });
+    this.look = currentOutfit(getGameData('park'));
+    this.pet?.remove();
+    this.pet = createPet(this.kit, this.scene, this.look.pet.kind);
+    this.pet?.cheer();
+    this.checkStickers();
+  }
+
+  // ---------- Sorpresas ----------
+
+  handleSurprise(event) {
+    if (event.type === 'start') {
+      sounds.levelUp();
+      this.notify(event.text);
+      if (event.kind !== 'wizard-challenge') trackEvent(`parque-sorpresa-${event.kind}`, 'Parque · sorpresa');
+    } else if (event.type === 'coin') {
+      sounds.coin();
+      this.addCoins(1);
+      this.progress('coin');
+    } else if (event.type === 'star') {
+      sounds.chime();
+    } else if (event.type === 'status') {
+      this.surpriseStatus.hidden = !event.text;
+      if (event.text) this.surpriseStatus.textContent = event.text;
+    } else if (event.type === 'miss') {
+      this.notify(event.text);
+    } else if (event.type === 'reward') {
+      const data = getGameData('park');
+      updateGameData('park', { coins: data.coins + event.coins, surprises: (data.surprises ?? 0) + 1 });
+      sounds.achievement();
+      this.pet?.cheer();
+      this.playerSay('🎉');
+      this.notify(event.text);
+      trackEvent(`parque-sorpresa-ok-${event.kind}`, 'Parque · sorpresa atrapada');
+      this.refreshHud();
+      this.checkPets();
+      this.checkStickers();
+    }
   }
 
   // ---------- Filas ----------
@@ -900,12 +977,8 @@ export class ParkGame {
 
   // ---------- Viajar a otro parque ----------
 
-  /** El tren 🚂: elige a qué parque ir (los cerrados dicen cómo se abren). */
+  /** Mapa del mundo (botón 🗺️ y tren 🚂): lo que falta en cada parque y a cuál ir. */
   openTravel() {
-    if (this.withFriends) {
-      this.notify('👭 Con amigas, el parque se elige en la sala');
-      return;
-    }
     if (this.status !== 'walk' && this.status !== 'result') {
       this.notify('🚂 Primero termina lo que estás haciendo');
       return;
@@ -1181,6 +1254,7 @@ export class ParkGame {
     this.refreshHud();
     this.showResult({ ride, result, photo, bonus });
     this.checkStickers();
+    this.checkPets();
   }
 
   /** Sale junto al final de la fila, mirando a la plaza (la cámara queda lejos del arco). */
@@ -1300,6 +1374,7 @@ export class ParkGame {
       sounds.achievement();
       this.refreshHud();
       this.checkStickers();
+      this.checkPets();
     }
     this.refreshMissions();
   }
@@ -1512,36 +1587,7 @@ export class ParkGame {
       return;
     }
     if (travel) {
-      const data = getGameData('park');
-      showModal({
-        emoji: '🚂',
-        title: '¿A qué parque vamos?',
-        message: 'Los parques con 🔒 se abren montando en todas las atracciones del anterior.',
-        escapeIndex: PARK_WORLDS.length,
-        actions: [
-          ...PARK_WORLDS.map((world, index) => {
-            if (world === this.world) return { label: `📍 ${world.emoji} ${world.name} (estás aquí)`, onClick: () => this.resume() };
-            if (!isWorldOpen(world, data)) {
-              return {
-                label: `🔒 ${world.name}`,
-                onClick: () => {
-                  this.resume();
-                  this.notify(`🔒 ${world.unlock.hint}`);
-                },
-              };
-            }
-            return {
-              label: `${world.emoji} ${world.name}`,
-              variant: 'primary',
-              onClick: () => {
-                this.resume();
-                this.travelTo(index);
-              },
-            };
-          }),
-          { label: 'Seguir aquí ▶', onClick: () => this.resume() },
-        ],
-      });
+      this.showMap();
       return;
     }
     const missions = describeMissions(todaysMissions(getGameData('park')));
@@ -1560,6 +1606,34 @@ export class ParkGame {
         { label: 'Salir del parque', onClick: () => navigate('/parque') },
       ].filter(Boolean),
     });
+  }
+
+  /** El mapa va en una capa sobre el juego (en pausa). Tocar otro parque abierto viaja en tren. */
+  showMap() {
+    const currentIndex = PARK_WORLDS.indexOf(this.world);
+    const map = createWorldMap({
+      data: getGameData('park'),
+      currentIndex,
+      note: this.withFriends ? '👭 Con amigas, el parque se elige en la sala' : '🚂 Toca un parque para viajar en tren',
+      onPick: this.withFriends
+        ? undefined
+        : (index) => {
+            this.closeMap();
+            if (index !== currentIndex) this.travelTo(index);
+          },
+      onClose: () => this.closeMap(),
+    });
+    this.mapLayer.replaceChildren(map.element);
+    this.mapLayer.hidden = false;
+    this.mapOpen = true;
+  }
+
+  closeMap() {
+    if (!this.mapOpen) return;
+    this.mapOpen = false;
+    this.mapLayer.hidden = true;
+    this.mapLayer.replaceChildren();
+    this.resume();
   }
 
   resumeAndExitRide() {
@@ -1588,6 +1662,7 @@ export class ParkGame {
     this.unbinders.forEach((unbind) => unbind());
     this.resizeObserver.disconnect();
     this.rideRun?.session.dispose();
+    this.surprises.dispose();
     this.friends?.destroy();
     this.scene.traverse((object) => object.isInstancedMesh && object.dispose());
     this.kit.dispose();

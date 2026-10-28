@@ -2859,3 +2859,321 @@
     display: none;
   }
 }
+
+/* ---------- Mapa del Mundo Mágico (pantalla previa y botón 🗺️ del parque) ---------- */
+.world-map {
+  --ring: 76px;
+  display: grid;
+  gap: 12px;
+}
+
+.world-map__header {
+  display: grid;
+  gap: 6px;
+}
+
+.world-map__title {
+  font-size: var(--fs-lg);
+  color: var(--c-purple-dark);
+}
+
+.world-map__bar {
+  display: block;
+  height: 14px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--c-purple-soft);
+}
+
+.world-map__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--g-play);
+  transition: width 0.6s var(--ease-out);
+}
+
+.world-map__note {
+  margin: 0;
+  color: var(--c-ink-soft);
+  font-size: var(--fs-sm);
+}
+
+/* Las paradas del tren sobre una vía punteada. */
+.world-map__track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.world-map__track::before {
+  content: '';
+  position: absolute;
+  top: calc(var(--ring) / 2 + 8px);
+  left: 10%;
+  right: 10%;
+  border-top: 5px dashed #c9b8ff;
+}
+
+.world-map__stop {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  padding: 8px 4px;
+  border: 3px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--c-ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-bounce), background 0.15s;
+}
+
+.world-map__stop:not(:disabled):hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.world-map__stop:disabled {
+  cursor: default;
+}
+
+.world-map__stop.is-selected,
+.world-map__stop.is-here {
+  border-color: var(--c-pink);
+  background: var(--c-pink-soft);
+}
+
+.world-map__stop.is-locked {
+  opacity: 0.6;
+}
+
+/* Anillo de progreso alrededor del emoji del parque. */
+.world-map__ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--ring);
+  height: var(--ring);
+  flex: none;
+  border-radius: 50%;
+  background: conic-gradient(var(--c-mint) calc(var(--percent) * 1%), #ece6ff 0);
+  box-shadow: var(--shadow-sm);
+}
+
+.world-map__stop.is-complete .world-map__ring {
+  background: conic-gradient(var(--c-yellow) 0 100%);
+}
+
+.world-map__emoji {
+  display: grid;
+  place-items: center;
+  width: calc(var(--ring) - 14px);
+  height: calc(var(--ring) - 14px);
+  border-radius: 50%;
+  background: var(--c-white);
+  font-size: calc(var(--ring) * 0.42);
+  line-height: 1;
+}
+
+.world-map__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: calc(var(--ring) * 0.3);
+  filter: drop-shadow(0 2px 2px rgba(43, 33, 64, 0.25));
+}
+
+.world-map__info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.world-map__name {
+  font-size: var(--fs-sm);
+  line-height: 1.15;
+}
+
+.world-map__counts {
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.world-map__missing {
+  color: var(--c-ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.world-map__pets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.world-map__pet-row {
+  display: flex;
+  gap: 6px;
+}
+
+.world-map__pet {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: #ece6ff;
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-bounce);
+}
+
+.world-map__pet.is-open {
+  background: var(--c-white);
+  box-shadow: 0 0 0 3px var(--c-yellow), var(--shadow-sm);
+}
+
+.world-map__pet:hover {
+  transform: scale(1.12);
+}
+
+.world-map__pet-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--c-ink-soft);
+  font-size: var(--fs-sm);
+}
+
+.world-map__close {
+  justify-self: center;
+}
+
+/* En el parque, el mapa va en una tarjeta sobre el juego (en pausa). */
+.park-map[hidden] {
+  display: none;
+}
+
+.park-map {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: rgba(43, 33, 64, 0.4);
+}
+
+.park-map .world-map {
+  width: min(100%, 860px);
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px;
+  border-radius: var(--radius-lg);
+  background: var(--c-white);
+  box-shadow: var(--shadow-lg);
+  animation: park-pop-card 0.4s var(--ease-bounce);
+}
+
+/* Contador del reto del mago. */
+.park-surprise-status[hidden],
+.stage--park:not([data-mode='walk']) .park-surprise-status {
+  display: none;
+}
+
+.park-surprise-status {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: var(--radius-pill);
+  background: rgba(75, 51, 196, 0.88);
+  color: var(--c-white);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+/* Celular en horizontal: paradas más pequeñas para que quepa todo. */
+@media (max-height: 560px) {
+  .world-map {
+    --ring: 54px;
+    gap: 8px;
+  }
+
+  .park-map {
+    padding: 6px;
+  }
+
+  .park-map .world-map {
+    padding: 10px 14px;
+  }
+
+  .world-map__missing {
+    display: none;
+  }
+
+  .world-map__counts {
+    font-size: 0.72rem;
+    white-space: normal;
+  }
+
+  .world-map__pet {
+    width: 36px;
+    height: 36px;
+    font-size: 1.2rem;
+  }
+
+  .park-surprise-status {
+    top: 54px;
+    font-size: var(--fs-md);
+  }
+}
+
+/* Celular en vertical: las paradas en columna, con la vía hacia abajo. */
+@media (max-width: 700px) and (orientation: portrait) {
+  .world-map {
+    --ring: 58px;
+  }
+
+  .world-map__track {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .world-map__track::before {
+    top: 8%;
+    bottom: 8%;
+    left: calc(var(--ring) / 2 + 9px);
+    right: auto;
+    border-top: 0;
+    border-left: 5px dashed #c9b8ff;
+  }
+
+  .world-map__stop {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 6px;
+    text-align: left;
+  }
+
+  .park-map .world-map {
+    padding: 12px 14px;
+  }
+
+  .park-surprise-status {
+    top: 64px;
+  }
+}

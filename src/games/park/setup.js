@@ -2,8 +2,9 @@ import { el, navigate } from '../../ui/dom.js';
 import { getGameData, updateGameData } from '../../core/player.js';
 import { sounds } from '../../core/audio.js';
 import { trackEvent } from '../../core/analytics.js';
-import { HAIR_COLORS, OUTFIT_SLOTS, SKIN_TONES, currentOutfit, isOwned } from './outfits.js';
+import { HAIR_COLORS, OUTFIT_SLOTS, SKIN_TONES, currentOutfit, isOwned, petUnlockText } from './outfits.js';
 import { PARK_WORLDS, UPCOMING_WORLDS, isWorldOpen } from './worlds.js';
+import { createWorldMap } from './worldMap.js';
 import { ALL_MISSIONS_BONUS, MISSION_COINS, describeMissions, todaysMissions } from './missions.js';
 
 /** Pantalla previa al parque: vestirse, comprar ropa, ver misiones, atracciones y granos dorados. */
@@ -63,7 +64,7 @@ export function mountParkSetup(root) {
       sounds.click();
       wear(slot, item.id);
     } else {
-      if (item.unlockText || data.coins < item.price) return;
+      if (item.unlockText || item.unlock || data.coins < item.price) return;
       sounds.levelUp();
       updateGameData('park', { coins: data.coins - item.price, owned: [...data.owned, item.id], outfit: { ...data.outfit, [slot]: item.id } });
       trackEvent(`parque-tienda-${item.id}`, 'Parque · compra en la tienda');
@@ -84,11 +85,12 @@ export function mountParkSetup(root) {
     refreshers.push(() => {
       const owned = isOwned(data, item);
       const isWorn = currentOutfit(data)[slot].id === item.id;
-      button.disabled = !owned && (Boolean(item.unlockText) || data.coins < item.price);
+      const lockText = item.unlock ? petUnlockText(data, item) : item.unlockText;
+      button.disabled = !owned && (Boolean(lockText) || data.coins < item.price);
       button.classList.toggle('is-selected', isWorn);
       button.classList.toggle('is-owned', owned);
       button.setAttribute('aria-pressed', String(isWorn));
-      price.textContent = isWorn ? '✅ Puesto' : owned ? 'Ponérmelo' : (item.unlockText ?? `🪙 ${item.price}`);
+      price.textContent = isWorn ? '✅ Puesto' : owned ? 'Ponérmelo' : (lockText ?? `🪙 ${item.price}`);
     });
     return button;
   }
@@ -161,22 +163,8 @@ export function mountParkSetup(root) {
   let selectedWorld = Math.min(data.lastWorld ?? 0, PARK_WORLDS.length - 1);
   if (!isWorldOpen(PARK_WORLDS[selectedWorld], data)) selectedWorld = 0;
 
-  const worldButtons = PARK_WORLDS.map((world, index) => {
-    const isOpen = isWorldOpen(world, data);
-    return el(
-      'button',
-      {
-        className: `world-option park-world ${isOpen ? '' : 'is-locked'}`,
-        attrs: { type: 'button', disabled: !isOpen, 'data-index': index },
-        on: { click: () => selectWorld(index) },
-      },
-      [
-        el('span', { className: 'world-option__emoji', text: isOpen ? world.emoji : '🔒', attrs: { 'aria-hidden': 'true' } }),
-        el('strong', { text: world.name }),
-        el('small', { text: isOpen ? world.description : world.unlock.hint }),
-      ],
-    );
-  });
+  // El mapa: cada parque es una parada del tren con lo que falta por hacer; tocar uno lo elige.
+  const worldMap = createWorldMap({ data, selectedIndex: selectedWorld, onPick: (index) => selectWorld(index) });
   const upcomingCards = UPCOMING_WORLDS.map((world) =>
     el('div', { className: 'world-option is-locked park-world' }, [
       el('span', { className: 'world-option__emoji', text: world.emoji, attrs: { 'aria-hidden': 'true' } }),
@@ -218,14 +206,10 @@ export function mountParkSetup(root) {
     );
     treasurePill.textContent = `${treasure.icon} ${found.length}/${treasure.items.length}`;
     treasurePill.title = treasure.name;
-    worldButtons.forEach((button, index) => {
-      button.classList.toggle('is-selected', index === selectedWorld);
-      button.setAttribute('aria-pressed', String(index === selectedWorld));
-    });
+    worldMap.select(selectedWorld);
   }
 
   function selectWorld(index) {
-    sounds.click();
     selectedWorld = index;
     updateGameData('park', { lastWorld: index });
     data = getGameData('park');
@@ -234,7 +218,8 @@ export function mountParkSetup(root) {
 
   const worldSection = el('section', { className: 'card setup__section' }, [
     el('h2', { className: 'setup__subtitle', text: '1. Elige el parque 🗺️' }),
-    el('div', { className: 'world-grid' }, [...worldButtons, ...upcomingCards]),
+    worldMap.element,
+    upcomingCards.length ? el('div', { className: 'world-grid' }, upcomingCards) : null,
   ]);
 
   const page = el('div', { className: 'setup' }, [

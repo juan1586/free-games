@@ -10,7 +10,8 @@ import { DINOS, isDinoUnlocked } from '../games/dino/dinos.js';
 import { GEO_LEVELS, GEO_WORLDS } from '../games/geo/levels.js';
 import { ACHIEVEMENTS, countStars as countGeoStars } from '../games/geo/achievements.js';
 import { TETRIS_WORLDS } from '../games/tetris/levels.js';
-import { ALL_RIDES, DULCES_RIDES, GOLDEN_BEANS, GOLDEN_CANDIES, GOLDEN_EGGS, GOLDEN_FROGS, GOLDEN_SHELLS, PANACA_RIDES, PARK_WORLDS, PLAYA_RIDES, RIDES, SELVA_RIDES, isWorldOpen } from '../games/park/worlds.js';
+import { ALL_RIDES, DULCES_RIDES, GOLDEN_BEANS, GOLDEN_CANDIES, GOLDEN_EGGS, GOLDEN_FROGS, GOLDEN_SHELLS, PANACA_RIDES, PARK_WORLDS, PLAYA_RIDES, RIDES, SELVA_RIDES, isWorldOpen, totalProgress } from '../games/park/worlds.js';
+import { openPets } from '../games/park/outfits.js';
 
 export const STICKER_GROUPS = [
   { id: 'dino', title: '🦖 Dino Corre', color: '#4dd4ac' },
@@ -106,6 +107,9 @@ export const STICKERS = [
   ),
   sticker('park', 'park-key-first', '🗝️', 'Llave secreta', 'Encuentra la llave secreta de un parque', ({ park }) => (park.keys ?? []).length >= 1),
   sticker('park', 'park-keys-all', '🦄', 'Cofre de las llaves', 'Junta las 5 llaves secretas y abre el cofre', ({ park }) => (park.keys ?? []).length >= 5),
+  sticker('park', 'park-surprise', '🎁', '¡Sorpresa!', 'Atrapa una sorpresa en el parque (globo, lluvia de monedas o el reto del mago)', ({ park }) => (park.surprises ?? 0) >= 1),
+  sticker('park', 'park-pets-3', '🐾', 'Amiga de los animales', 'Consigue 3 mascotas', ({ park }) => openPets(park).length >= 3),
+  sticker('park', 'park-map-100', '🌍', 'Mundo completo', 'Completa el mapa del Mundo Mágico al 100%', ({ park }) => totalProgress(park) >= 100),
   sticker('park', 'park-missions', '📋', 'Misionera', 'Cumple 10 misiones del parque', ({ park }) => park.missionsDone >= 10),
   sticker('park', 'park-friends', '👭', 'Parque con amigas', 'Entra al parque con amigas', ({ park }) => park.friendVisits >= 1),
   sticker('park', 'park-fashion', '🤠', 'Arriera elegante', 'Compra 3 cosas en la tienda del parque', ({ park }) => park.owned.length >= 3),

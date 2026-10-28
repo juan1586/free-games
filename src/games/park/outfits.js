@@ -2,9 +2,10 @@
  * Ropa y accesorios del personaje del parque. Lo de precio 0 se tiene desde el principio;
  * lo demás se compra con las monedas del parque (`park.owned`) y se lleva en `park.outfit`.
  * Lo que tiene `key` (id de un parque) no se compra: se abre con la llave secreta de ese parque
- * (`park.keys`); brilla (`sparkle`). La mascota se abre con todas las llaves.
+ * (`park.keys`); brilla (`sparkle`). Las mascotas se abren con un reto (`unlock`).
  * Sin three.js: la pantalla previa dibuja la vista previa con CSS.
  */
+import { totalProgress } from './worlds.js';
 
 export const SKIN_TONES = [
   { id: 'skin-1', name: 'Clara', color: '#ffe0c4' },
@@ -97,12 +98,31 @@ export const EXTRAS = [
   { id: 'heart-glasses', name: 'Gafas de corazón', icon: '💖', kind: 'glasses', color: '#ff4f8b', key: 'dulces', unlockText: '🗝️ Llave del Castillo', sparkle: true, price: 0 },
 ];
 
-/** Cuántas llaves secretas hay (una por parque) y la mascota que se abre con todas. */
+/** Cuántas llaves secretas hay (una por parque). */
 export const SECRET_KEY_COUNT = 5;
+
+/**
+ * Mascotas: cada una se abre con un reto (`unlock`: `count(data)` tiene que llegar a `goal`;
+ * `text` es lo que se ve en el vestidor). `kind` decide la figura en 3D (pet.js).
+ */
 export const PETS = [
   { id: 'pet-none', name: 'Sin mascota', icon: '🚫', kind: 'none', price: 0 },
-  { id: 'pet-unicorn', name: 'Unicornio bebé', icon: '🦄', kind: 'unicorn', allKeys: true, unlockText: '🗝️ Junta las 5 llaves', sparkle: true, price: 0 },
+  { id: 'pet-dog', name: 'Perrito', icon: '🐶', kind: 'dog', price: 0, unlock: { text: '🎢 Monta 15 veces', goal: 15, count: (data) => data.totalRides ?? 0 } },
+  { id: 'pet-cat', name: 'Gatito', icon: '🐱', kind: 'cat', price: 0, unlock: { text: '📋 Cumple 10 misiones', goal: 10, count: (data) => data.missionsDone ?? 0 } },
+  { id: 'pet-chick', name: 'Pollito', icon: '🐥', kind: 'chick', price: 0, unlock: { text: '🎁 Atrapa 5 sorpresas', goal: 5, count: (data) => data.surprises ?? 0 } },
+  { id: 'pet-unicorn', name: 'Unicornio bebé', icon: '🦄', kind: 'unicorn', price: 0, sparkle: true, unlock: { text: '🗝️ Junta las 5 llaves', goal: SECRET_KEY_COUNT, count: (data) => (data.keys ?? []).length } },
+  { id: 'pet-dragon', name: 'Dragón bebé', icon: '🐉', kind: 'dragon', price: 0, sparkle: true, unlock: { text: '🗺️ Completa el mapa', goal: 100, count: (data) => totalProgress(data) } },
 ];
+
+/** Texto del reto con su avance (p. ej. «🎢 Monta 15 veces · 12/15»). */
+export function petUnlockText(data, pet) {
+  const { text, goal, count } = pet.unlock;
+  const value = Math.min(goal, count(data));
+  return goal === 100 ? `${text} · ${value}%` : `${text} · ${value}/${goal}`;
+}
+
+/** Mascotas ya abiertas (sin contar «Sin mascota»). */
+export const openPets = (data) => PETS.filter((pet) => pet.unlock && isOwned(data, pet));
 
 /** Lo que se elige en la tienda (`slot` = campo de `park.outfit`). La piel y el color del pelo van aparte. */
 export const OUTFIT_SLOTS = [
@@ -119,7 +139,7 @@ const findIn = (items, id) => items.find((item) => item.id === id) ?? items[0];
 
 export function isOwned(data, item) {
   const keys = data.keys ?? [];
-  if (item.allKeys) return keys.length >= SECRET_KEY_COUNT;
+  if (item.unlock) return item.unlock.count(data) >= item.unlock.goal;
   if (item.key) return keys.includes(item.key);
   return item.price === 0 || data.owned.includes(item.id);
 }
